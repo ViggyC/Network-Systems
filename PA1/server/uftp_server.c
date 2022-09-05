@@ -57,7 +57,7 @@ int main(int argc, char **argv)
     char *array[2];                // for storing command and file - if one is requested
     char *hostaddrp;               /* dotted decimal host addr string */
     int optval;                    /* flag value for setsockopt */
-    int n;                         /* message byte size */
+    int n, n_bytes;                /* message byte size */
     char file_buffer[BUFSIZE];
     char *command;
     char *file_requested;
@@ -206,9 +206,10 @@ int main(int argc, char **argv)
             else
             {
 
-                n = recvfrom(sockfd, file_buffer, BUFSIZE, 0, (struct sockaddr *)&clientlen, &clientlen);
+                // need to check total number of bytes sent and received
+                n_bytes = recvfrom(sockfd, file_buffer, BUFSIZE, 0, (struct sockaddr *)&clientlen, &clientlen);
 
-                if (n >= 0)
+                if (n_bytes >= 0)
                 {
                     FILE *file_get;
                     // write the contents on server_response into file_get: EVERYTHING IN UNIX IS A FILE!!!
@@ -223,7 +224,6 @@ int main(int argc, char **argv)
                     {
                         // source: https://stackoverflow.com/questions/7749134/reading-and-writing-a-buffer-in-binary-file
                         fwrite(file_buffer, n, 1, file_get);
-                        // n = recvfrom(sockfd, file_buffer, BUFSIZE, 0, (struct sockaddr *)&clientaddr, &clientlen); // this call blocks!!!!
                         printf("Client wrote: %s\n", file_buffer);
                     }
 
@@ -232,16 +232,52 @@ int main(int argc, char **argv)
                     n = sendto(sockfd, server_response, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
                 }
             }
+            /*
+             * gethostbyaddr: determine who sent the datagram , client. This returns a linked list: hostent
+             */
+            hostp = gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, // where is clientAddr initialized - is it populated by recvfrom via socket???
+                                  sizeof(clientaddr.sin_addr.s_addr), AF_INET);
+            if (hostp == NULL)
+                error("ERROR on gethostbyaddr");
+            hostaddrp = inet_ntoa(clientaddr.sin_addr);
+            if (hostaddrp == NULL)
+                error("ERROR on inet_ntoa\n");
+            printf("server received datagram from %s (%s)\n",
+                   hostp->h_name, hostaddrp);
+            printf("server received %lu/%d bytes: %s\n", strlen(file_buffer), n_bytes, file_buffer);
         }
         else if (strcmp(command, "delete") == 0)
         {
             /* Delete source: https://www.tutorialkart.com/c-programming/c-delete-file/ */
-            char server_response[BUFSIZE];
-            snprintf(server_response, sizeof(server_response), "DELETE %s successful", file_requested);
-            if (remove(file_requested) == 0)
+            if (file_requested == NULL)
             {
-                n = sendto(sockfd, server_response, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
+                printf("No file provided by client\n");
+                n = sendto(sockfd, error_message, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
+                if (n < 0)
+                    error("ERROR in sendto");
             }
+            else
+            {
+                char server_response[BUFSIZE];
+                snprintf(server_response, sizeof(server_response), "DELETE %s successful", file_requested);
+                if (remove(file_requested) == 0)
+                {
+                    n = sendto(sockfd, server_response, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
+                }
+            }
+            /*
+             * gethostbyaddr: determine who sent the datagram , client. This returns a linked list: hostent
+             */
+            hostp = gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, // where is clientAddr initialized - is it populated by recvfrom via socket???
+                                  sizeof(clientaddr.sin_addr.s_addr), AF_INET);
+            if (hostp == NULL)
+                error("ERROR on gethostbyaddr");
+            hostaddrp = inet_ntoa(clientaddr.sin_addr);
+            if (hostaddrp == NULL)
+                error("ERROR on inet_ntoa\n");
+            printf("server received datagram from %s (%s)\n",
+                   hostp->h_name, hostaddrp);
+            printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
         }
         else if (strcmp(command, "ls") == 0)
         {
@@ -272,6 +308,20 @@ int main(int argc, char **argv)
             {
                 error("Error closing directory");
             }
+
+            /*
+             * gethostbyaddr: determine who sent the datagram , client. This returns a linked list: hostent
+             */
+            hostp = gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, // where is clientAddr initialized - is it populated by recvfrom via socket???
+                                  sizeof(clientaddr.sin_addr.s_addr), AF_INET);
+            if (hostp == NULL)
+                error("ERROR on gethostbyaddr");
+            hostaddrp = inet_ntoa(clientaddr.sin_addr);
+            if (hostaddrp == NULL)
+                error("ERROR on inet_ntoa\n");
+            printf("server received datagram from %s (%s)\n",
+                   hostp->h_name, hostaddrp);
+            printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
         }
         else if (strcmp(command, "exit") == 0)
 
@@ -282,6 +332,19 @@ int main(int argc, char **argv)
             n = sendto(sockfd, file_buffer, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
             if (n < 0)
                 error("ERROR in sendto");
+            /*
+             * gethostbyaddr: determine who sent the datagram , client. This returns a linked list: hostent
+             */
+            hostp = gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, // where is clientAddr initialized - is it populated by recvfrom via socket???
+                                  sizeof(clientaddr.sin_addr.s_addr), AF_INET);
+            if (hostp == NULL)
+                error("ERROR on gethostbyaddr");
+            hostaddrp = inet_ntoa(clientaddr.sin_addr);
+            if (hostaddrp == NULL)
+                error("ERROR on inet_ntoa\n");
+            printf("server received datagram from %s (%s)\n",
+                   hostp->h_name, hostaddrp);
+            printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
         }
         else
         {
@@ -290,20 +353,6 @@ int main(int argc, char **argv)
             strcpy(file_buffer, invalid_response);
             n = sendto(sockfd, file_buffer, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
         }
-
-        /*
-         * gethostbyaddr: determine who sent the datagram , client. This returns a linked list: hostent
-         */
-        hostp = gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, // where is clientAddr initialized - is it populated by recvfrom via socket???
-                              sizeof(clientaddr.sin_addr.s_addr), AF_INET);
-        if (hostp == NULL)
-            error("ERROR on gethostbyaddr");
-        hostaddrp = inet_ntoa(clientaddr.sin_addr);
-        if (hostaddrp == NULL)
-            error("ERROR on inet_ntoa\n");
-        printf("server received datagram from %s (%s)\n",
-               hostp->h_name, hostaddrp);
-        printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
 
         /* Old code from starter file
          * sendto: echo the input back to the client

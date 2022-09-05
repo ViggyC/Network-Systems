@@ -125,6 +125,8 @@ int main(int argc, char **argv)
             /* This call blocks as it waits for server response*/
             /* Server response is a buffer that contains the file contents! */
             n = recvfrom(sockfd, server_response, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen);
+            printf("Received %d bytes from server: \n", n);
+
             printf("%s\n", server_response);
 
             if (strcmp(server_response, "File does not exit") != 0)
@@ -150,7 +152,8 @@ int main(int argc, char **argv)
         }
         else if (strcmp(command, "put") == 0)
         {
-            printf("Client wants to PUT %s\n", file_requested);
+            // printf("Client wants to PUT %s\n", file_requested);
+            // check how many bytes were sent/written
 
             FILE *file_send; // server file descriptor, for get, server will open the file requested by client and write its contents into a SOCK-DGRM
 
@@ -187,6 +190,7 @@ int main(int argc, char **argv)
                 n = sendto(sockfd, file_buffer, bytes_sent, 0, (struct sockaddr *)&serveraddr, serverlen);
                 if (n < 0)
                     error("ERROR in sendto");
+                printf("Client sent %d bytes\n", bytes_sent);
 
                 n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen); // this call blocks!!!!
                 printf("Echo from server: %s\n", buf);
