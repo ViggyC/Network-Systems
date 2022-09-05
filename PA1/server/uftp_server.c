@@ -228,8 +228,19 @@ int main(int argc, char **argv)
                     }
 
                     fclose(file_get);
-                    printf("PUT %s complete\n", file_requested);
+                    char server_response[BUFSIZE] = "PUT successful";
+                    n = sendto(sockfd, server_response, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
                 }
+            }
+        }
+        else if (strcmp(command, "delete") == 0)
+        {
+            /* Delete source: https://www.tutorialkart.com/c-programming/c-delete-file/ */
+            char server_response[BUFSIZE];
+            snprintf(server_response, sizeof(server_response), "DELETE %s successful", file_requested);
+            if (remove(file_requested) == 0)
+            {
+                n = sendto(sockfd, server_response, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
             }
         }
         else if (strcmp(command, "ls") == 0)

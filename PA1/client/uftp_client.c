@@ -188,9 +188,18 @@ int main(int argc, char **argv)
                 if (n < 0)
                     error("ERROR in sendto");
 
-                printf("File sent\n");
+                n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen); // this call blocks!!!!
+                printf("Echo from server: %s\n", buf);
+
                 fclose(file_send);
             }
+        }
+        else if (strcmp(command, "delete") == 0)
+        {
+            n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen);
+            if (n < 0)
+                error("ERROR in recvfrom");
+            printf("%s\n", buf);
         }
         else if (strcmp(command, "ls") == 0)
         {
