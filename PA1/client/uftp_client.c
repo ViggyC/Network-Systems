@@ -95,7 +95,7 @@ int main(int argc, char **argv)
         buf[strlen(buf) - 1] = '\0'; // null terminator for new line in user input
 
         strcpy(temp_buf, buf); // calling strcpy function
-        printf("User input: %s\n", buf);
+        // printf("User input: %s\n", buf);
 
         /* now split the users response in 'buf' by delimeter " " */
 
@@ -104,6 +104,14 @@ int main(int argc, char **argv)
         // printf("%s\n", command);
         file_requested = strtok(NULL, " ");
         // printf("%s\n", file_requested);
+
+        /* Dont let the client send get put or delete commands without a file */
+        /* This eliminates the need to send extra messages for error correction */
+        if ((strcmp(command, "get") == 0 && file_requested == NULL) || (strcmp(command, "put") == 0 && file_requested == NULL) || (strcmp(command, "delete") == 0 && file_requested == NULL))
+        {
+            printf("Enter a file name\n");
+            continue;
+        }
 
         /* send the parsed user input to the server */
         n = sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr *)&serveraddr, serverlen); // returns number of bytes sent
@@ -123,22 +131,25 @@ int main(int argc, char **argv)
         if (strcmp(command, "get") == 0)
         {
             // printf("Client wants to get file %s\n", file_requested);
-
-            if (file_requested == NULL)
-            {
-                printf("Invalid request, please enter a file\n");
-                continue;
-            }
-
             FILE *file_get;
-            // write the contents on server_response into file_get: EVERYTHING IN UNIX IS A FILE!!!
-            file_get = fopen(file_requested, "w");
-            bzero(buf, sizeof(buf));
 
+            /* Error handling server response - if file does not exist on server side */
+            bzero(buf, sizeof(buf));
             /*first get size of file in case we need to do partial receives*/
             n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen); // this call blocks!!!!
-            char *p;
-            size_of_file = strtol(buf, &p, 10);
+            if (strcmp(buf, "File does not exist") == 0)
+            {
+                printf("%s\n", buf);
+                continue;
+            }
+            else
+            {
+                // write the contents on server_response into file_get: EVERYTHING IN UNIX IS A FILE!!!
+                file_get = fopen(file_requested, "wb");
+                char *p;
+                size_of_file = strtol(buf, &p, 10);
+            }
+
             // printf("size of file: %lu \n", size_of_file);
             long received = 0;
             /* source: https://stackoverflow.com/questions/7749134/reading-and-writing-a-buffer-in-binary-file */
@@ -185,83 +196,88 @@ int main(int argc, char **argv)
         }
         else if (strcmp(command, "put") == 0)
         {
-            printf("Client wants to PUT %s\n", file_requested);
-            // check how many bytes were sent/written
-            if (file_requested == NULL)
-            {
-                printf("Invalid request, please enter a file\n");
-                continue;
-            }
+            // printf("Client wants to PUT %s\n", file_requested);
+            //  check how many bytes were sent/written
 
             FILE *file_send; // server file descriptor, for get, server will open the file requested by client and write its contents into a SOCK-DGRM
 
             int fd = access(file_requested, F_OK | R_OK);
             if (!fd)
             {
-                file_send = fopen(file_requested, "r");
+                file_send = fopen(file_requested, "rb");
             }
             else
             {
                 file_send = NULL;
             }
 
-            /* now read file contents into buffer*/
-            // we open the file and copy its contents into 'file_buffer' and send that over to client using sendto
-            // source: https://stackoverflow.com/questions/14002954/c-programming-how-to-read-the-whole-file-contents-into-a-buffer
-
-            /* Source that helped me write a buffer into a file */
-            // https://stackoverflow.com/questions/14002954/c-programming-how-to-read-the-whole-file-contents-into-a-buffer
-            fseek(file_send, 0, SEEK_END);
-            long fsize = ftell(file_send);
-            fseek(file_send, 0, SEEK_SET);
-            bzero(buf, sizeof(buf));
-            sprintf(buf, "%ld", fsize);
-            /* sending size of file to server first */
-            n = sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr *)&serveraddr, serverlen);
-            /* If file is larger than buffer size */
-            long sent = 0;
-            bzero(buf, sizeof(buf));
-
-            /* buffer can fit all of the file! */
-            if (BUFSIZE > fsize)
+            if (file_send == NULL)
             {
+                printf("Enter an existing file\n");
+                char msg[] = "Don't create this file";
                 bzero(buf, sizeof(buf));
-                fread(buf, sizeof(char), BUFSIZE, file_send);
-                printf("Contents of file_buffer: %s\n", buf);
+                strcpy(buf, msg);
                 n = sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr *)&serveraddr, serverlen);
-                if (n < 0)
-                    error("ERROR in sendto");
             }
             else
             {
-                /* CJ office hours: Need to do partial sends and receives if file is greater than buffer size! */
-                while (sent < fsize)
+                /* now read file contents into buffer*/
+                // we open the file and copy its contents into 'file_buffer' and send that over to client using sendto
+                // source: https://stackoverflow.com/questions/14002954/c-programming-how-to-read-the-whole-file-contents-into-a-buffer
+
+                /* Source that helped me write a buffer into a file */
+                // https://stackoverflow.com/questions/14002954/c-programming-how-to-read-the-whole-file-contents-into-a-buffer
+                fseek(file_send, 0, SEEK_END);
+                long fsize = ftell(file_send);
+                fseek(file_send, 0, SEEK_SET);
+                bzero(buf, sizeof(buf));
+                sprintf(buf, "%ld", fsize);
+                /* sending size of file to server first */
+                n = sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr *)&serveraddr, serverlen);
+                /* If file is larger than buffer size */
+                long sent = 0;
+                bzero(buf, sizeof(buf));
+
+                /* buffer can fit all of the file! */
+                if (BUFSIZE > fsize)
                 {
                     bzero(buf, sizeof(buf));
-                    /* what we need to send is still more than what we can fit */
-                    if (fsize - sent > BUFSIZE)
+                    fread(buf, sizeof(char), BUFSIZE, file_send);
+                    // printf("Contents of file_buffer: %s\n", buf);
+                    n = sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr *)&serveraddr, serverlen);
+                    if (n < 0)
+                        error("ERROR in sendto");
+                }
+                else
+                {
+                    /* CJ office hours: Need to do partial sends and receives if file is greater than buffer size! */
+                    while (sent < fsize)
                     {
-                        fread(buf, sizeof(char), BUFSIZE, file_send);
-                        n = sendto(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, serverlen);
-                        // printf("buf: %s \n", buf);
-                        if (n < 0)
-                            error("ERROR in sendto");
-                        sent += n;
-                    }
-                    else
-                    {
-                        /*other wise just send whats left over, it should fit */
-                        fread(buf, sizeof(char), BUFSIZE, file_send);
-                        n = sendto(sockfd, buf, fsize - sent, 0, (struct sockaddr *)&serveraddr, serverlen);
-                        // printf("buf: %s \n", buf);
-                        if (n < 0)
-                            error("ERROR in sendto");
-                        sent += n;
+                        bzero(buf, sizeof(buf));
+                        /* what we need to send is still more than what we can fit */
+                        if (fsize - sent > BUFSIZE)
+                        {
+                            fread(buf, sizeof(char), BUFSIZE, file_send);
+                            n = sendto(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, serverlen);
+                            // printf("buf: %s \n", buf);
+                            if (n < 0)
+                                error("ERROR in sendto");
+                            sent += n;
+                        }
+                        else
+                        {
+                            /*other wise just send whats left over, it should fit */
+                            fread(buf, sizeof(char), BUFSIZE, file_send);
+                            n = sendto(sockfd, buf, fsize - sent, 0, (struct sockaddr *)&serveraddr, serverlen);
+                            // printf("buf: %s \n", buf);
+                            if (n < 0)
+                                error("ERROR in sendto");
+                            sent += n;
+                        }
                     }
                 }
+                fclose(file_send);
             }
-
-            fclose(file_send);
         }
         else if (strcmp(command, "delete") == 0)
         {

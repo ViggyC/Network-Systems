@@ -123,8 +123,8 @@ int main(int argc, char **argv)
             error("ERROR in recvfrom");
         }
 
-        printf("Server got %s from client\n", buf); // need to parse this.....ugh
-        strcpy(temp_buf, buf);                      // calling strcpy function
+        // printf("Server got %s from client\n", buf); // need to parse this.....ugh
+        strcpy(temp_buf, buf); // calling strcpy function
         /* now split the users response (buff) by delimeter */
         command = strtok(temp_buf, " "); // source: https://www.youtube.com/watch?v=34DnZ2ewyZo
         file_requested = strtok(NULL, " ");
@@ -150,64 +150,72 @@ int main(int argc, char **argv)
             int fd = access(file_requested, F_OK | R_OK);
             if (!fd)
             {
-                file_send = fopen(file_requested, "r");
+                file_send = fopen(file_requested, "rb");
             }
             else
             {
                 file_send = NULL;
+                bzero(buf, sizeof(buf));
+                char msg[] = "File does not exist";
+                strcpy(buf, msg);
+                n = sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr *)&clientaddr, clientlen);
+                continue;
             }
-
-            /* now read file contents into buffer*/
-            // we open the file and copy its contents into 'file_buffer' and send that over to client using sendto
-            /* source: https://stackoverflow.com/questions/14002954/c-programming-how-to-read-the-whole-file-contents-into-a-buffer */
-
-            fseek(file_send, 0, SEEK_END);
-            long fsize = ftell(file_send);
-            fseek(file_send, 0, SEEK_SET);
-            // printf("Size of file requested: %lu \n", fsize);
-            bzero(buf, sizeof(buf));
-            sprintf(buf, "%ld", fsize);
-            n = sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr *)&clientaddr, clientlen);
-
-            /* If file is larger than buffer size */
-            long sent = 0;
-            bzero(buf, sizeof(buf));
 
             /* buffer can fit all of the file! */
-            if (BUFSIZE > fsize)
+            if (file_send != NULL)
             {
+                /* now read file contents into buffer*/
+                // we open the file and copy its contents into 'file_buffer' and send that over to client using sendto
+                /* source: https://stackoverflow.com/questions/14002954/c-programming-how-to-read-the-whole-file-contents-into-a-buffer */
+
+                fseek(file_send, 0, SEEK_END);
+                long fsize = ftell(file_send);
+                fseek(file_send, 0, SEEK_SET);
+                // printf("Size of file requested: %lu \n", fsize);
                 bzero(buf, sizeof(buf));
-                fread(buf, sizeof(char), BUFSIZE, file_send);
-                printf("Contents of file_buffer: %s\n", buf);
+                sprintf(buf, "%ld", fsize);
                 n = sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr *)&clientaddr, clientlen);
-                if (n < 0)
-                    error("ERROR in sendto");
-            }
-            else
-            {
-                /* CJ office hours: Need to do partial sends and receives if file is greater than buffer size! */
-                while (sent < fsize)
+
+                /* If file is larger than buffer size */
+                long sent = 0;
+                bzero(buf, sizeof(buf));
+
+                if (BUFSIZE > fsize)
                 {
                     bzero(buf, sizeof(buf));
-                    /* what we need to send is still more than what we can fit */
-                    if (fsize - sent > BUFSIZE)
+                    fread(buf, sizeof(char), BUFSIZE, file_send);
+                    // printf("Contents of file_buffer: %s\n", buf);
+                    n = sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr *)&clientaddr, clientlen);
+                    if (n < 0)
+                        error("ERROR in sendto");
+                }
+                else
+                {
+                    /* CJ office hours: Need to do partial sends and receives if file is greater than buffer size! */
+                    while (sent < fsize)
                     {
-                        fread(buf, sizeof(char), BUFSIZE, file_send);
-                        n = sendto(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
-                        // printf("buf: %s \n", buf);
-                        if (n < 0)
-                            error("ERROR in sendto");
-                        sent += n;
-                    }
-                    else
-                    {
-                        /*other wise just send whats left over, it should fit */
-                        fread(buf, sizeof(char), BUFSIZE, file_send);
-                        n = sendto(sockfd, buf, fsize - sent, 0, (struct sockaddr *)&clientaddr, clientlen);
-                        // printf("buf: %s \n", buf);
-                        if (n < 0)
-                            error("ERROR in sendto");
-                        sent += n;
+                        bzero(buf, sizeof(buf));
+                        /* what we need to send is still more than what we can fit */
+                        if (fsize - sent > BUFSIZE)
+                        {
+                            fread(buf, sizeof(char), BUFSIZE, file_send);
+                            n = sendto(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
+                            // printf("buf: %s \n", buf);
+                            if (n < 0)
+                                error("ERROR in sendto");
+                            sent += n;
+                        }
+                        else
+                        {
+                            /*other wise just send whats left over, it should fit */
+                            fread(buf, sizeof(char), BUFSIZE, file_send);
+                            n = sendto(sockfd, buf, fsize - sent, 0, (struct sockaddr *)&clientaddr, clientlen);
+                            // printf("buf: %s \n", buf);
+                            if (n < 0)
+                                error("ERROR in sendto");
+                            sent += n;
+                        }
                     }
                 }
             }
@@ -220,17 +228,25 @@ int main(int argc, char **argv)
             FILE *file_get;
             // write the contents on server_response into file_get: EVERYTHING IN UNIX IS A FILE!!!
 
-            file_get = fopen(file_requested, "w"); // getting seg fault
             // need to check total number of bytes sent and received
             bzero(buf, sizeof(buf));
             n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientlen, &clientlen);
+            if (strcmp(buf, "Don't create this file") == 0)
+            {
+                // printf("buf %s: \n", buf);
+                continue;
+            }
+            else
+            {
+                char *p;
+                size_of_file = strtol(buf, &p, 10);
+                file_get = fopen(file_requested, "wb"); // getting seg fault
+
+                // printf("size of file: %lu \n", size_of_file);
+            }
             printf("server received datagram from %s (%s)\n",
                    hostp->h_name, hostaddrp);
             printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
-
-            char *p;
-            size_of_file = strtol(buf, &p, 10);
-            // printf("size of file: %lu \n", size_of_file);
             long received = 0;
 
             if (BUFSIZE > size_of_file)
@@ -238,7 +254,6 @@ int main(int argc, char **argv)
                 bzero(buf, sizeof(buf));
                 n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, &clientlen); // this call blocks!!!!
                 fwrite(buf, 1, n, file_get);
-                printf("Get Successful\n");
                 fclose(file_get);
                 printf("server received datagram from %s (%s)\n",
                        hostp->h_name, hostaddrp);
@@ -258,6 +273,8 @@ int main(int argc, char **argv)
                         if (n < 0)
                             error("ERROR in sendto");
                         received += n;
+                        printf("server received datagram from %s (%s)\n", hostp->h_name, hostaddrp);
+                        printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
                     }
                     else
                     {
@@ -270,12 +287,11 @@ int main(int argc, char **argv)
                         if (n < 0)
                             error("ERROR in sendto");
                         received += n;
+                        printf("server received datagram from %s (%s)\n", hostp->h_name, hostaddrp);
+                        printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
                     }
                 }
                 fclose(file_get);
-                printf("server received datagram from %s (%s)\n",
-                       hostp->h_name, hostaddrp);
-                printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
             }
         }
         else if (strcmp(command, "delete") == 0)
