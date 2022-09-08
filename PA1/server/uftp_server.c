@@ -58,10 +58,10 @@ int main(int argc, char **argv)
     char *hostaddrp;               /* dotted decimal host addr string */
     int optval;                    /* flag value for setsockopt */
     int n, n_bytes;                /* message byte size */
-    char file_buffer[BUFSIZE];
     char *command;
     char *file_requested;
     char error_message[BUFSIZE] = "Invalid request!";
+    int size_of_file;
 
     /*
      * check command line arguments
@@ -115,7 +115,6 @@ int main(int argc, char **argv)
          */
         // printf("top marker\n");
         bzero(buf, sizeof(buf));
-        bzero(file_buffer, sizeof(file_buffer));
         n = recvfrom(sockfd, buf, BUFSIZE, 0,
                      (struct sockaddr *)&clientaddr, &clientlen); // stores client message in buf, this function blocks
 
@@ -124,127 +123,128 @@ int main(int argc, char **argv)
             error("ERROR in recvfrom");
         }
 
-        printf("%d \n", n);
         printf("Server got %s from client\n", buf); // need to parse this.....ugh
         strcpy(temp_buf, buf);                      // calling strcpy function
         /* now split the users response (buff) by delimeter */
         command = strtok(temp_buf, " "); // source: https://www.youtube.com/watch?v=34DnZ2ewyZo
-        // command[strlen(command)] = '\0';
-
         file_requested = strtok(NULL, " ");
+        /*
+         * gethostbyaddr: determine who sent the datagram , client. This returns a linked list: hostent
+         */
+        hostp = gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, // where is clientAddr initialized - is it populated by recvfrom via socket???
+                              sizeof(clientaddr.sin_addr.s_addr), AF_INET);
+        if (hostp == NULL)
+            error("ERROR on gethostbyaddr");
+        hostaddrp = inet_ntoa(clientaddr.sin_addr);
+        if (hostaddrp == NULL)
+            error("ERROR on inet_ntoa\n");
+
+        printf("server received datagram from %s (%s)\n",
+               hostp->h_name, hostaddrp);
+        printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
 
         if (strcmp(command, "get") == 0)
         {
             FILE *file_send; // server file descriptor, for get, server will open the file requested by client and write its contents into a SOCK-DGRM
-
-            if (file_requested == NULL)
+            /*First check if file exists*/
+            int fd = access(file_requested, F_OK | R_OK);
+            if (!fd)
             {
-                printf("No file provided by client\n");
-                n = sendto(sockfd, error_message, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
+                file_send = fopen(file_requested, "r");
+            }
+            else
+            {
+                file_send = NULL;
+            }
+
+            /* now read file contents into buffer*/
+            // we open the file and copy its contents into 'file_buffer' and send that over to client using sendto
+            /* source: https://stackoverflow.com/questions/14002954/c-programming-how-to-read-the-whole-file-contents-into-a-buffer */
+
+            fseek(file_send, 0, SEEK_END);
+            long fsize = ftell(file_send);
+            fseek(file_send, 0, SEEK_SET);
+            // printf("Size of file requested: %lu \n", fsize);
+
+            bzero(buf, sizeof(buf));
+            sprintf(buf, "%ld", fsize);
+            n = sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr *)&clientaddr, clientlen);
+
+            /* If file is larger than buffer size */
+            long sent = 0;
+            bzero(buf, sizeof(buf));
+
+            /* buffer can fit all of the file! */
+            if (BUFSIZE > fsize)
+            {
+                bzero(buf, sizeof(buf));
+                fread(buf, sizeof(char), BUFSIZE, file_send);
+                printf("Contents of file_buffer: %s\n", buf);
+                n = sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr *)&clientaddr, clientlen);
                 if (n < 0)
                     error("ERROR in sendto");
             }
             else
             {
-                /*First check if file exists*/
-
-                int fd = access(file_requested, F_OK | R_OK);
-                if (!fd)
+                /* CJ office hours: Need to do partial sends and receives if file is greater than buffer size! */
+                while (sent < fsize)
                 {
-                    file_send = fopen(file_requested, "r");
-                }
-                else
-                {
-                    file_send = NULL;
-                }
-
-                /* now read file contents into buffer*/
-                // we open the file and copy its contents into 'file_buffer' and send that over to client using sendto
-                // source: https://stackoverflow.com/questions/14002954/c-programming-how-to-read-the-whole-file-contents-into-a-buffer
-                file_send = fopen(file_requested, "r"); /* Opening a file in w mode will delete its contents!*/
-                if (file_send == NULL)
-                {
-                    // printf("Invalid file\n");
-                    char file_error[] = "File does not exit";
-                    strcpy(file_buffer, file_error);
-                    n = sendto(sockfd, file_buffer, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
-                    if (n < 0)
-                        error("ERROR in sendto");
-                }
-                else
-                {
-
-                    fseek(file_send, 0, SEEK_END);
-                    long fsize = ftell(file_send);
-                    fseek(file_send, 0, SEEK_SET);
-                    fread(file_buffer, sizeof(char), BUFSIZE, file_send);
-                    printf("Contents of file_buffer: %s\n", file_buffer);
-
-                    n = sendto(sockfd, file_buffer, strlen(file_buffer), 0, (struct sockaddr *)&clientaddr, clientlen);
-                    if (n < 0)
-                        error("ERROR in sendto");
-
-                    char server_response[BUFSIZE] = "GET successful";
-                    n = sendto(sockfd, server_response, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
-                    if (n < 0)
-                        error("ERROR in sendto");
-
-                    fclose(file_send);
-                }
-            }
-        }
-        else if (strcmp(command, "put") == 0)
-        {
-
-            if (file_requested == NULL)
-            {
-                printf("No file provided by client\n");
-                n = sendto(sockfd, error_message, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
-                if (n < 0)
-                    error("ERROR in sendto");
-            }
-            else
-            {
-
-                // need to check total number of bytes sent and received
-                n_bytes = recvfrom(sockfd, file_buffer, BUFSIZE, 0, (struct sockaddr *)&clientlen, &clientlen);
-
-                if (n_bytes >= 0)
-                {
-                    FILE *file_get;
-                    // write the contents on server_response into file_get: EVERYTHING IN UNIX IS A FILE!!!
-
-                    file_get = fopen(file_requested, "w"); // getting seg fault
-
-                    if (file_get == NULL)
+                    bzero(buf, sizeof(buf));
+                    /* what we need to send is still more than what we can fit */
+                    if (fsize - sent > BUFSIZE)
                     {
-                        printf("Failed to open file\n");
+                        fread(buf, sizeof(char), BUFSIZE, file_send);
+                        n = sendto(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
+                        // printf("buf: %s \n", buf);
+                        if (n < 0)
+                            error("ERROR in sendto");
+                        sent += n;
                     }
                     else
                     {
-                        // source: https://stackoverflow.com/questions/7749134/reading-and-writing-a-buffer-in-binary-file
-                        fwrite(file_buffer, n, 1, file_get);
-                        printf("Client wrote: %s\n", file_buffer);
+                        /*other wise just send whats left over, it should fit */
+                        fread(buf, sizeof(char), BUFSIZE, file_send);
+                        n = sendto(sockfd, buf, fsize - sent, 0, (struct sockaddr *)&clientaddr, clientlen);
+                        // printf("buf: %s \n", buf);
+                        if (n < 0)
+                            error("ERROR in sendto");
+                        sent += n;
                     }
-
-                    fclose(file_get);
-                    char server_response[BUFSIZE] = "PUT successful";
-                    n = sendto(sockfd, server_response, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
                 }
             }
-            /*
-             * gethostbyaddr: determine who sent the datagram , client. This returns a linked list: hostent
-             */
-            hostp = gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, // where is clientAddr initialized - is it populated by recvfrom via socket???
-                                  sizeof(clientaddr.sin_addr.s_addr), AF_INET);
-            if (hostp == NULL)
-                error("ERROR on gethostbyaddr");
-            hostaddrp = inet_ntoa(clientaddr.sin_addr);
-            if (hostaddrp == NULL)
-                error("ERROR on inet_ntoa\n");
+
+            fclose(file_send);
+        }
+        else if (strcmp(command, "put") == 0)
+        {
+            // need to check total number of bytes sent and received
+            bzero(buf, sizeof(buf));
+            n_bytes = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientlen, &clientlen);
+
+            if (n_bytes >= 0)
+            {
+                FILE *file_get;
+                // write the contents on server_response into file_get: EVERYTHING IN UNIX IS A FILE!!!
+
+                file_get = fopen(file_requested, "w"); // getting seg fault
+
+                if (file_get == NULL)
+                {
+                    printf("Failed to open file\n");
+                }
+                else
+                {
+                    // source: https://stackoverflow.com/questions/7749134/reading-and-writing-a-buffer-in-binary-file
+                    fwrite(buf, n, 1, file_get);
+                    printf("Client wrote: %s\n", buf);
+                }
+
+                fclose(file_get);
+            }
+
             printf("server received datagram from %s (%s)\n",
                    hostp->h_name, hostaddrp);
-            printf("server received %lu/%d bytes: %s\n", strlen(file_buffer), n_bytes, file_buffer);
+            printf("server received %lu/%d bytes: %s\n", strlen(buf), n_bytes, buf);
         }
         else if (strcmp(command, "delete") == 0)
         {
@@ -265,16 +265,7 @@ int main(int argc, char **argv)
                     n = sendto(sockfd, server_response, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
                 }
             }
-            /*
-             * gethostbyaddr: determine who sent the datagram , client. This returns a linked list: hostent
-             */
-            hostp = gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, // where is clientAddr initialized - is it populated by recvfrom via socket???
-                                  sizeof(clientaddr.sin_addr.s_addr), AF_INET);
-            if (hostp == NULL)
-                error("ERROR on gethostbyaddr");
-            hostaddrp = inet_ntoa(clientaddr.sin_addr);
-            if (hostaddrp == NULL)
-                error("ERROR on inet_ntoa\n");
+
             printf("server received datagram from %s (%s)\n",
                    hostp->h_name, hostaddrp);
             printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
@@ -301,66 +292,24 @@ int main(int argc, char **argv)
                 strcat(full_ls, entry->d_name);
                 strcat(full_ls, "\n");
             }
-            printf("%s", full_ls);
             n = sendto(sockfd, full_ls, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
 
             if (closedir(directory) == -1)
             {
                 error("Error closing directory");
             }
-
-            /*
-             * gethostbyaddr: determine who sent the datagram , client. This returns a linked list: hostent
-             */
-            hostp = gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, // where is clientAddr initialized - is it populated by recvfrom via socket???
-                                  sizeof(clientaddr.sin_addr.s_addr), AF_INET);
-            if (hostp == NULL)
-                error("ERROR on gethostbyaddr");
-            hostaddrp = inet_ntoa(clientaddr.sin_addr);
-            if (hostaddrp == NULL)
-                error("ERROR on inet_ntoa\n");
-            printf("server received datagram from %s (%s)\n",
-                   hostp->h_name, hostaddrp);
-            printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
         }
         else if (strcmp(command, "exit") == 0)
 
         {
             // printf("Client wants to exit\n");
+            bzero(buf, sizeof(buf));
             char server_exit_response[] = "Server acknowledges client exit";
-            strcpy(file_buffer, server_exit_response);
-            n = sendto(sockfd, file_buffer, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
+            strcpy(buf, server_exit_response);
+            n = sendto(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
             if (n < 0)
                 error("ERROR in sendto");
-            /*
-             * gethostbyaddr: determine who sent the datagram , client. This returns a linked list: hostent
-             */
-            hostp = gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, // where is clientAddr initialized - is it populated by recvfrom via socket???
-                                  sizeof(clientaddr.sin_addr.s_addr), AF_INET);
-            if (hostp == NULL)
-                error("ERROR on gethostbyaddr");
-            hostaddrp = inet_ntoa(clientaddr.sin_addr);
-            if (hostaddrp == NULL)
-                error("ERROR on inet_ntoa\n");
-            printf("server received datagram from %s (%s)\n",
-                   hostp->h_name, hostaddrp);
-            printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
         }
-        else
-        {
-
-            char invalid_response[] = "Invalid input";
-            strcpy(file_buffer, invalid_response);
-            n = sendto(sockfd, file_buffer, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
-        }
-
-        /* Old code from starter file
-         * sendto: echo the input back to the client
-         */
-        // n = sendto(sockfd, buf, strlen(buf), 0,
-        //            (struct sockaddr *)&clientaddr, clientlen);
-        // if (n < 0)
-        //     error("ERROR in sendto");
     }
     close(sockfd);
     return 0;

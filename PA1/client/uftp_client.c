@@ -38,6 +38,7 @@ int main(int argc, char **argv)
     char server_response[BUFSIZE];
     char error_message[BUFSIZE]; // the server might send an error message which we need to recoginze
     char file_buffer[BUFSIZE];   // file buffer datagram to send to server for PUT
+    long size_of_file;
 
     /* check command line arguments */
     if (argc != 3)
@@ -114,46 +115,81 @@ int main(int argc, char **argv)
         /* At this point all we do is wait for the server
             After sending the users service request, we need to receive the servers response!!!
          */
-        bzero(server_response, sizeof(server_response));
-        bzero(error_message, sizeof(server_response)); // this could be the same server_response as above but just testing right now
+        // bzero(server_response, sizeof(server_response));
+        // bzero(error_message, sizeof(server_response)); // this could be the same server_response as above but just testing right now
         bzero(file_buffer, sizeof(file_buffer));
 
         /*Write logic to allow user to keep entering commands until user selects exit*/
         if (strcmp(command, "get") == 0)
         {
             // printf("Client wants to get file %s\n", file_requested);
-            /* This call blocks as it waits for server response*/
-            /* Server response is a buffer that contains the file contents! */
-            n = recvfrom(sockfd, server_response, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen);
-            printf("Received %d bytes from server: \n", n);
 
-            printf("%s\n", server_response);
-
-            if (strcmp(server_response, "File does not exit") != 0)
+            if (file_requested == NULL)
             {
-                FILE *file_get;
-                // write the contents on server_response into file_get: EVERYTHING IN UNIX IS A FILE!!!
+                printf("Invalid request, please enter a file\n");
+                continue;
+            }
 
-                file_get = fopen(file_requested, "w"); // getting seg fault
+            FILE *file_get;
+            // write the contents on server_response into file_get: EVERYTHING IN UNIX IS A FILE!!!
+            file_get = fopen(file_requested, "w");
+            bzero(buf, sizeof(buf));
 
-                if (file_get == NULL)
+            /*first get size of file in case we need to do partial receives*/
+            n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen); // this call blocks!!!!
+            char *p;
+            size_of_file = strtol(buf, &p, 10);
+            // printf("size of file: %lu \n", size_of_file);
+            long received = 0;
+            /* source: https://stackoverflow.com/questions/7749134/reading-and-writing-a-buffer-in-binary-file */
+            if (BUFSIZE > size_of_file)
+            {
+                bzero(buf, sizeof(buf));
+                n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen); // this call blocks!!!!
+                fwrite(buf, 1, n, file_get);
+                printf("Get Successful\n");
+                fclose(file_get);
+            }
+            else
+            {
+                while (received < size_of_file)
                 {
-                    printf("Failed to open file\n");
+                    bzero(buf, sizeof(buf));
+                    /* what we need to send is still more than what we can fit */
+                    if (size_of_file - received > BUFSIZE)
+                    {
+                        n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen); // this call blocks!!!!
+                        fwrite(buf, 1, n, file_get);
+                        // printf("buf %s: \n", buf);
+                        if (n < 0)
+                            error("ERROR in sendto");
+                        received += n;
+                    }
+                    else
+                    {
+                        /*other wise just send whats left over, it should fit */
+                        n = recvfrom(sockfd, buf, size_of_file - received, 0, (struct sockaddr *)&serveraddr, &serverlen); // this call blocks!!!!
+                        fwrite(buf, 1, n, file_get);
+
+                        // printf("buf: %s \n", buf);
+
+                        if (n < 0)
+                            error("ERROR in sendto");
+                        received += n;
+                    }
                 }
-                else
-                {
-                    // source: https://stackoverflow.com/questions/7749134/reading-and-writing-a-buffer-in-binary-file
-                    fwrite(server_response, n, 1, file_get);
-                    n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen); // this call blocks!!!!
-                    printf("Echo from server: %s\n", buf);
-                    fclose(file_get);
-                }
+                fclose(file_get);
             }
         }
         else if (strcmp(command, "put") == 0)
         {
             // printf("Client wants to PUT %s\n", file_requested);
             // check how many bytes were sent/written
+            if (file_requested == NULL)
+            {
+                printf("Invalid request, please enter a file\n");
+                continue;
+            }
 
             FILE *file_send; // server file descriptor, for get, server will open the file requested by client and write its contents into a SOCK-DGRM
 
@@ -174,8 +210,6 @@ int main(int argc, char **argv)
             if (file_send == NULL)
             {
                 printf("Invalid file\n");
-                if (n < 0)
-                    error("ERROR in sendto");
             }
             else
             {
@@ -191,15 +225,12 @@ int main(int argc, char **argv)
                 if (n < 0)
                     error("ERROR in sendto");
                 printf("Client sent %d bytes\n", bytes_sent);
-
-                n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen); // this call blocks!!!!
-                printf("Echo from server: %s\n", buf);
-
                 fclose(file_send);
             }
         }
         else if (strcmp(command, "delete") == 0)
         {
+            bzero(buf, sizeof(buf));
             n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen);
             if (n < 0)
                 error("ERROR in recvfrom");
@@ -207,12 +238,14 @@ int main(int argc, char **argv)
         }
         else if (strcmp(command, "ls") == 0)
         {
+            bzero(buf, sizeof(buf));
             printf("Here is a list of all the server files:\n");
             n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen); // this call blocks!!!!
             printf("%s\n", buf);
         }
         else if (strcmp(command, "exit") == 0)
         {
+            bzero(buf, sizeof(buf));
             n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen);
             if (n < 0)
                 error("ERROR in recvfrom");
