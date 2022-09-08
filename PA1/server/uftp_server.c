@@ -165,7 +165,6 @@ int main(int argc, char **argv)
             long fsize = ftell(file_send);
             fseek(file_send, 0, SEEK_SET);
             // printf("Size of file requested: %lu \n", fsize);
-
             bzero(buf, sizeof(buf));
             sprintf(buf, "%ld", fsize);
             n = sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr *)&clientaddr, clientlen);
@@ -217,34 +216,67 @@ int main(int argc, char **argv)
         }
         else if (strcmp(command, "put") == 0)
         {
+
+            FILE *file_get;
+            // write the contents on server_response into file_get: EVERYTHING IN UNIX IS A FILE!!!
+
+            file_get = fopen(file_requested, "w"); // getting seg fault
             // need to check total number of bytes sent and received
             bzero(buf, sizeof(buf));
-            n_bytes = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientlen, &clientlen);
-
-            if (n_bytes >= 0)
-            {
-                FILE *file_get;
-                // write the contents on server_response into file_get: EVERYTHING IN UNIX IS A FILE!!!
-
-                file_get = fopen(file_requested, "w"); // getting seg fault
-
-                if (file_get == NULL)
-                {
-                    printf("Failed to open file\n");
-                }
-                else
-                {
-                    // source: https://stackoverflow.com/questions/7749134/reading-and-writing-a-buffer-in-binary-file
-                    fwrite(buf, n, 1, file_get);
-                    printf("Client wrote: %s\n", buf);
-                }
-
-                fclose(file_get);
-            }
-
+            n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientlen, &clientlen);
             printf("server received datagram from %s (%s)\n",
                    hostp->h_name, hostaddrp);
-            printf("server received %lu/%d bytes: %s\n", strlen(buf), n_bytes, buf);
+            printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
+
+            char *p;
+            size_of_file = strtol(buf, &p, 10);
+            // printf("size of file: %lu \n", size_of_file);
+            long received = 0;
+
+            if (BUFSIZE > size_of_file)
+            {
+                bzero(buf, sizeof(buf));
+                n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, &clientlen); // this call blocks!!!!
+                fwrite(buf, 1, n, file_get);
+                printf("Get Successful\n");
+                fclose(file_get);
+                printf("server received datagram from %s (%s)\n",
+                       hostp->h_name, hostaddrp);
+                printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
+            }
+            else
+            {
+                while (received < size_of_file)
+                {
+                    bzero(buf, sizeof(buf));
+                    /* what we need to send is still more than what we can fit */
+                    if (size_of_file - received > BUFSIZE)
+                    {
+                        n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, &clientlen); // this call blocks!!!!
+                        fwrite(buf, 1, n, file_get);
+                        // printf("buf %s: \n", buf);
+                        if (n < 0)
+                            error("ERROR in sendto");
+                        received += n;
+                    }
+                    else
+                    {
+                        /*other wise just send whats left over, it should fit */
+                        n = recvfrom(sockfd, buf, size_of_file - received, 0, (struct sockaddr *)&clientaddr, &clientlen); // this call blocks!!!!
+                        fwrite(buf, 1, n, file_get);
+
+                        // printf("buf: %s \n", buf);
+
+                        if (n < 0)
+                            error("ERROR in sendto");
+                        received += n;
+                    }
+                }
+                fclose(file_get);
+                printf("server received datagram from %s (%s)\n",
+                       hostp->h_name, hostaddrp);
+                printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
+            }
         }
         else if (strcmp(command, "delete") == 0)
         {

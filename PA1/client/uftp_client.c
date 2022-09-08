@@ -178,12 +178,14 @@ int main(int argc, char **argv)
                         received += n;
                     }
                 }
+                printf("Get Successful\n");
+
                 fclose(file_get);
             }
         }
         else if (strcmp(command, "put") == 0)
         {
-            // printf("Client wants to PUT %s\n", file_requested);
+            printf("Client wants to PUT %s\n", file_requested);
             // check how many bytes were sent/written
             if (file_requested == NULL)
             {
@@ -206,27 +208,60 @@ int main(int argc, char **argv)
             /* now read file contents into buffer*/
             // we open the file and copy its contents into 'file_buffer' and send that over to client using sendto
             // source: https://stackoverflow.com/questions/14002954/c-programming-how-to-read-the-whole-file-contents-into-a-buffer
-            file_send = fopen(file_requested, "r"); /* Opening a file in w mode will delete its contents!*/
-            if (file_send == NULL)
+
+            /* Source that helped me write a buffer into a file */
+            // https://stackoverflow.com/questions/14002954/c-programming-how-to-read-the-whole-file-contents-into-a-buffer
+            fseek(file_send, 0, SEEK_END);
+            long fsize = ftell(file_send);
+            fseek(file_send, 0, SEEK_SET);
+            bzero(buf, sizeof(buf));
+            sprintf(buf, "%ld", fsize);
+            /* sending size of file to server first */
+            n = sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr *)&serveraddr, serverlen);
+            /* If file is larger than buffer size */
+            long sent = 0;
+            bzero(buf, sizeof(buf));
+
+            /* buffer can fit all of the file! */
+            if (BUFSIZE > fsize)
             {
-                printf("Invalid file\n");
+                bzero(buf, sizeof(buf));
+                fread(buf, sizeof(char), BUFSIZE, file_send);
+                printf("Contents of file_buffer: %s\n", buf);
+                n = sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr *)&serveraddr, serverlen);
+                if (n < 0)
+                    error("ERROR in sendto");
             }
             else
             {
-                /* Source that helped me write a buffer into a file */
-                // https://stackoverflow.com/questions/14002954/c-programming-how-to-read-the-whole-file-contents-into-a-buffer
-                fseek(file_send, 0, SEEK_END);
-                long fsize = ftell(file_send);
-                fseek(file_send, 0, SEEK_SET);
-                int bytes_sent = fread(file_buffer, sizeof(char), BUFSIZE, file_send);
-                printf("Contents of client file: %s\n", file_buffer);
-
-                n = sendto(sockfd, file_buffer, bytes_sent, 0, (struct sockaddr *)&serveraddr, serverlen);
-                if (n < 0)
-                    error("ERROR in sendto");
-                printf("Client sent %d bytes\n", bytes_sent);
-                fclose(file_send);
+                /* CJ office hours: Need to do partial sends and receives if file is greater than buffer size! */
+                while (sent < fsize)
+                {
+                    bzero(buf, sizeof(buf));
+                    /* what we need to send is still more than what we can fit */
+                    if (fsize - sent > BUFSIZE)
+                    {
+                        fread(buf, sizeof(char), BUFSIZE, file_send);
+                        n = sendto(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, serverlen);
+                        // printf("buf: %s \n", buf);
+                        if (n < 0)
+                            error("ERROR in sendto");
+                        sent += n;
+                    }
+                    else
+                    {
+                        /*other wise just send whats left over, it should fit */
+                        fread(buf, sizeof(char), BUFSIZE, file_send);
+                        n = sendto(sockfd, buf, fsize - sent, 0, (struct sockaddr *)&serveraddr, serverlen);
+                        // printf("buf: %s \n", buf);
+                        if (n < 0)
+                            error("ERROR in sendto");
+                        sent += n;
+                    }
+                }
             }
+
+            fclose(file_send);
         }
         else if (strcmp(command, "delete") == 0)
         {
