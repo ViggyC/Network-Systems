@@ -57,7 +57,7 @@ int main(int argc, char **argv)
     char *array[2];                // for storing command and file - if one is requested
     char *hostaddrp;               /* dotted decimal host addr string */
     int optval;                    /* flag value for setsockopt */
-    int n, n_bytes;                /* message byte size */
+    int n;                         /* message byte size */
     char *command;
     char *file_requested;
     char error_message[BUFSIZE] = "Invalid request!";
@@ -293,6 +293,10 @@ int main(int argc, char **argv)
                 }
                 fclose(file_get);
             }
+            char msg[] = "PUT successful";
+            bzero(buf, sizeof(buf));
+            strcpy(buf, msg);
+            n = sendto(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
         }
         else if (strcmp(command, "delete") == 0)
         {

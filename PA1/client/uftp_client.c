@@ -277,6 +277,8 @@ int main(int argc, char **argv)
                     }
                 }
                 fclose(file_send);
+                n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen); // this call blocks!!!!
+                printf("%s\n", buf);
             }
         }
         else if (strcmp(command, "delete") == 0)
