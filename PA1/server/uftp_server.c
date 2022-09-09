@@ -330,6 +330,27 @@ int main(int argc, char **argv)
             }
             else
             {
+
+                char temp[BUFSIZE];
+                strcpy(temp, file_requested);
+
+                /* so if temp/file_requested contains a '/', we know its in a subdirectory so we have to parse it */
+                if (strrchr(temp, '/') != NULL)
+                {
+                    // printf("requesting: %s\n", file_requested);
+                    /*SOURCE: https://stackoverflow.com/questions/19639288/c-split-a-string-and-select-last-element */
+                    char *file = strrchr(file_requested, '/');
+                    // printf("file: %s\n", file);
+                    char *file_requested = file + 1;
+                    // printf("file requested: %s\n",file_requested);
+                }
+                else
+                {
+                    // printf("file requested: %s\n",file_requested);
+                }
+
+                printf("file requested: %s\n", file_requested);
+
                 char server_response[BUFSIZE];
                 snprintf(server_response, sizeof(server_response), "DELETE %s successful", file_requested);
                 if (remove(file_requested) == 0)
