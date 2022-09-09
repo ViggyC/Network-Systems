@@ -3,7 +3,7 @@
  * usage: uftpclient <host> <port>
  * Adapted from sample udp_client
  * Author: Vignesh Chandrasekhar
- * Collaborators:
+ * Collaborators: Freddy Perez
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -70,7 +70,7 @@ int main(int argc, char **argv)
     /* build the server's Internet address */
     bzero((char *)&serveraddr, sizeof(serveraddr));
     serveraddr.sin_family = AF_INET;                              // internet domains
-    bcopy((char *)server->h_addr,                                 // note: h_addr = h_addrlist[0]
+    bcopy((char *)server->h_addr_list[0],                         // note: h_addr = h_addrlist[0]
           (char *)&serveraddr.sin_addr.s_addr, server->h_length); // need to figureout what this is doing
     serveraddr.sin_port = htons(portno);
     // printf("Server h_name: %s\n", server->h_name);

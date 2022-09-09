@@ -3,7 +3,7 @@
  * usage: uftpserver <port>
  * Adapted from sample udp_server
  * Author: Vignesh Chandrasekhar
- * Collaborators:
+ * Collaborators: Collaborators: Freddy Perez
  */
 
 #include <stdio.h>
@@ -340,9 +340,9 @@ int main(int argc, char **argv)
                     // printf("requesting: %s\n", file_requested);
                     /*SOURCE: https://stackoverflow.com/questions/19639288/c-split-a-string-and-select-last-element */
                     char *file = strrchr(file_requested, '/');
-                    // printf("file: %s\n", file);
+                    printf("file: %s\n", file);
                     char *file_requested = file + 1;
-                    // printf("file requested: %s\n",file_requested);
+                    printf("file requested: %s\n", file_requested);
                 }
                 else
                 {
@@ -356,6 +356,13 @@ int main(int argc, char **argv)
                 if (remove(file_requested) == 0)
                 {
                     n = sendto(sockfd, server_response, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
+                }
+                else
+                {
+                    bzero(buf, sizeof(buf));
+                    char *msg = "Delete failed, try again and make sure directory is right";
+                    strcpy(buf, msg);
+                    n = sendto(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
                 }
             }
 
