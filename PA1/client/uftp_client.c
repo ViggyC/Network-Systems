@@ -35,9 +35,6 @@ int main(int argc, char **argv)
     char file_from_server[BUFSIZE];
     char *command; // One of => GET PUT DELETE ls EXIT
     char *file_requested;
-    char server_response[BUFSIZE];
-    char error_message[BUFSIZE]; // the server might send an error message which we need to recoginze
-    char file_buffer[BUFSIZE];   // file buffer datagram to send to server for PUT
     long size_of_file;
 
     /* check command line arguments */
@@ -123,9 +120,6 @@ int main(int argc, char **argv)
         /* At this point all we do is wait for the server
             After sending the users service request, we need to receive the servers response!!!
          */
-        // bzero(server_response, sizeof(server_response));
-        // bzero(error_message, sizeof(server_response)); // this could be the same server_response as above but just testing right now
-        bzero(file_buffer, sizeof(file_buffer));
 
         /*Write logic to allow user to keep entering commands until user selects exit*/
         if (strcmp(command, "get") == 0)
@@ -145,7 +139,28 @@ int main(int argc, char **argv)
             else
             {
                 // write the contents on server_response into file_get: EVERYTHING IN UNIX IS A FILE!!!
-                file_get = fopen(file_requested, "wb");
+
+                /* Create temp char array so we dont override file_requested */
+                char temp[BUFSIZE];
+                strcpy(temp, file_requested);
+
+                /* so if temp/file_requested contains a '/', we know its in a subdirectory so we have to parse it */
+                if (strrchr(temp, '/') != NULL)
+                {
+                    // printf("requesting: %s\n", file_requested);
+                    /*SOURCE: https://stackoverflow.com/questions/19639288/c-split-a-string-and-select-last-element */
+                    char *file = strrchr(file_requested, '/');
+                    // printf("file: %s\n", file);
+                    char *file_requested = file + 1;
+                    // printf("file requested: %s\n",file_requested);
+                    file_get = fopen(file_requested, "wb");
+                }
+                else
+                {
+                    // printf("file requested: %s\n",file_requested);
+                    file_get = fopen(file_requested, "wb");
+                }
+
                 char *p;
                 size_of_file = strtol(buf, &p, 10);
             }
@@ -222,7 +237,7 @@ int main(int argc, char **argv)
             else
             {
                 /* now read file contents into buffer*/
-                // we open the file and copy its contents into 'file_buffer' and send that over to client using sendto
+                // we open the file and copy its contents into 'buf' and send that over to client using sendto
                 // source: https://stackoverflow.com/questions/14002954/c-programming-how-to-read-the-whole-file-contents-into-a-buffer
 
                 /* Source that helped me write a buffer into a file */
@@ -243,7 +258,6 @@ int main(int argc, char **argv)
                 {
                     bzero(buf, sizeof(buf));
                     fread(buf, sizeof(char), BUFSIZE, file_send);
-                    // printf("Contents of file_buffer: %s\n", buf);
                     n = sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr *)&serveraddr, serverlen);
                     if (n < 0)
                         error("ERROR in sendto");

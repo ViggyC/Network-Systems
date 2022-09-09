@@ -238,10 +238,30 @@ int main(int argc, char **argv)
             }
             else
             {
+
+                /* Create temp char array so we dont override file_requested */
+                char temp[BUFSIZE];
+                strcpy(temp, file_requested);
+
+                /* so if temp/file_requested contains a '/', we know its in a subdirectory so we have to parse it */
+                if (strrchr(temp, '/') != NULL)
+                {
+                    // printf("requesting: %s\n", file_requested);
+                    /*SOURCE: https://stackoverflow.com/questions/19639288/c-split-a-string-and-select-last-element */
+                    char *file = strrchr(file_requested, '/');
+                    // printf("file: %s\n", file);
+                    char *file_requested = file + 1;
+                    // printf("file requested: %s\n",file_requested);
+                    file_get = fopen(file_requested, "wb");
+                }
+                else
+                {
+                    // printf("file requested: %s\n",file_requested);
+                    file_get = fopen(file_requested, "wb");
+                }
+
                 char *p;
                 size_of_file = strtol(buf, &p, 10);
-                file_get = fopen(file_requested, "wb"); // getting seg fault
-
                 // printf("size of file: %lu \n", size_of_file);
             }
             printf("server received datagram from %s (%s)\n",
