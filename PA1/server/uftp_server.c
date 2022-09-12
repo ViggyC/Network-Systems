@@ -63,6 +63,11 @@ int main(int argc, char **argv)
     char error_message[BUFSIZE] = "Invalid request!";
     int size_of_file;
 
+    /* https://stackoverflow.com/questions/4181784/how-to-set-socket-timeout-in-c-when-making-multiple-connections */
+    struct timeval timeout;
+    timeout.tv_sec = 10;
+    timeout.tv_usec = 0;
+
     /*
      * check command line arguments
      */

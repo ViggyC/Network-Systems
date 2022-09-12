@@ -51,6 +51,14 @@ int main(int argc, char **argv)
     if (sockfd < 0)
         error("ERROR opening socket");
 
+    struct timeval tv;
+    tv.tv_sec = 3;
+    tv.tv_usec = 0;
+    if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
+    {
+        perror("Error");
+    }
+
     /* gethostbyname: get the server's DNS entry */
     server = gethostbyname(hostname); // server's name or IP address, does this bypass getaddrinfo()?
     if (server == NULL)
@@ -308,6 +316,11 @@ int main(int argc, char **argv)
             bzero(buf, sizeof(buf));
             printf("Here is a list of all the server files:\n");
             n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen); // this call blocks!!!!
+            // timeout
+            if (n < 0)
+            {
+                printf("client timeout\n");
+            }
             printf("%s\n", buf);
         }
         else if (strcmp(command, "exit") == 0)
