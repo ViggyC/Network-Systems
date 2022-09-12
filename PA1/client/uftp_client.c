@@ -13,6 +13,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <sys/time.h>
 #include <netdb.h>
 
 #define BUFSIZE 1024
@@ -140,6 +141,12 @@ int main(int argc, char **argv)
             bzero(buf, sizeof(buf));
             /*first get size of file in case we need to do partial receives*/
             n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen); // this call blocks!!!!
+            if (n < 0)
+            {
+                printf("client timeout\n");
+                continue;
+            }
+
             if (strcmp(buf, "File does not exist") == 0)
             {
                 printf("%s\n", buf);
@@ -301,7 +308,14 @@ int main(int argc, char **argv)
                 }
                 fclose(file_send);
                 n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen); // this call blocks!!!!
-                printf("%s\n", buf);
+                if (n < 0)
+                {
+                    printf("client timeout\n");
+                }
+                else
+                {
+                    printf("%s\n", buf);
+                }
             }
         }
         else if (strcmp(command, "delete") == 0)
@@ -309,30 +323,43 @@ int main(int argc, char **argv)
             bzero(buf, sizeof(buf));
             n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen);
             if (n < 0)
-                error("ERROR in recvfrom");
-            printf("%s\n", buf);
+            {
+                printf("client timeout\n");
+            }
+            else
+            {
+                printf("%s\n", buf);
+            }
         }
         else if (strcmp(command, "ls") == 0)
         {
             bzero(buf, sizeof(buf));
-            printf("Here is a list of all the server files:\n");
             n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen); // this call blocks!!!!
             // timeout
             if (n < 0)
             {
                 printf("client timeout\n");
             }
-            printf("%s\n", buf);
+            else
+            {
+                printf("Here is a list of all the server files:\n");
+                printf("%s\n", buf);
+            }
         }
         else if (strcmp(command, "exit") == 0)
         {
             bzero(buf, sizeof(buf));
             n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen);
             if (n < 0)
-                error("ERROR in recvfrom");
-            printf("%s\n", buf);
-            close(sockfd);
-            exit(1);
+            {
+                printf("client timeout\n");
+            }
+            else
+            {
+                printf("%s\n", buf);
+                close(sockfd);
+                exit(1);
+            }
         }
         else
         {
