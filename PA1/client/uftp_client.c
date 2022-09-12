@@ -51,6 +51,7 @@ int main(int argc, char **argv)
     if (sockfd < 0)
         error("ERROR opening socket");
 
+    // https://stackoverflow.com/questions/13547721/udp-socket-set-timeout
     struct timeval tv;
     tv.tv_sec = 3;
     tv.tv_usec = 0;
