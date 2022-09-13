@@ -54,7 +54,7 @@ int main(int argc, char **argv)
 
     // https://stackoverflow.com/questions/13547721/udp-socket-set-timeout
     struct timeval tv;
-    tv.tv_sec = 3;
+    tv.tv_sec = 5;
     tv.tv_usec = 0;
     if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
     {
@@ -143,7 +143,7 @@ int main(int argc, char **argv)
             n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen); // this call blocks!!!!
             if (n < 0)
             {
-                printf("client timeout\n");
+                printf("client timeout in get 1\n");
                 continue;
             }
 
@@ -190,37 +190,31 @@ int main(int argc, char **argv)
                 n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen); // this call blocks!!!!
                 fwrite(buf, 1, n, file_get);
                 printf("Get Successful\n");
+                printf("Received %lu bytes\n", received);
                 fclose(file_get);
             }
             else
             {
+                /* note: for client get, client need only keep reading in the file into buf */
                 while (received < size_of_file)
                 {
                     bzero(buf, sizeof(buf));
                     /* what we need to send is still more than what we can fit */
-                    if (size_of_file - received > BUFSIZE)
+
+                    n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen); // this call blocks!!!!
+                    if (n < 0)
                     {
-                        n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen); // this call blocks!!!!
-                        fwrite(buf, 1, n, file_get);
-                        // printf("buf %s: \n", buf);
-                        if (n < 0)
-                            error("ERROR in sendto");
-                        received += n;
+                        printf("client timeout in get 2\n");
                     }
                     else
                     {
-                        /*other wise just send whats left over, it should fit */
-                        n = recvfrom(sockfd, buf, size_of_file - received, 0, (struct sockaddr *)&serveraddr, &serverlen); // this call blocks!!!!
-                        fwrite(buf, 1, n, file_get);
-
-                        // printf("buf: %s \n", buf);
-
-                        if (n < 0)
-                            error("ERROR in sendto");
+                        fwrite(buf, sizeof(char), n, file_get);
+                        // printf("buf %s: \n", buf);
                         received += n;
                     }
                 }
                 printf("Get Successful\n");
+                printf("Received %lu bytes\n", received);
 
                 fclose(file_get);
             }
@@ -269,6 +263,8 @@ int main(int argc, char **argv)
                 long sent = 0;
                 bzero(buf, sizeof(buf));
 
+                printf("File size: %lu\n", fsize);
+
                 /* buffer can fit all of the file! */
                 if (BUFSIZE > fsize)
                 {
@@ -285,7 +281,7 @@ int main(int argc, char **argv)
                     {
                         bzero(buf, sizeof(buf));
                         /* what we need to send is still more than what we can fit */
-                        if (fsize - sent > BUFSIZE)
+                        if ((fsize - sent) > BUFSIZE)
                         {
                             fread(buf, sizeof(char), BUFSIZE, file_send);
                             n = sendto(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, serverlen);
@@ -297,7 +293,7 @@ int main(int argc, char **argv)
                         else
                         {
                             /*other wise just send whats left over, it should fit */
-                            fread(buf, sizeof(char), BUFSIZE, file_send);
+                            fread(buf, sizeof(char), fsize - sent, file_send);
                             n = sendto(sockfd, buf, fsize - sent, 0, (struct sockaddr *)&serveraddr, serverlen);
                             // printf("buf: %s \n", buf);
                             if (n < 0)
@@ -306,11 +302,14 @@ int main(int argc, char **argv)
                         }
                     }
                 }
+
+                printf("Client sent %lu bytes\n", sent);
                 fclose(file_send);
                 n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen); // this call blocks!!!!
+
                 if (n < 0)
                 {
-                    printf("client timeout\n");
+                    printf("client timeout in put\n");
                 }
                 else
                 {
@@ -324,7 +323,7 @@ int main(int argc, char **argv)
             n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen);
             if (n < 0)
             {
-                printf("client timeout\n");
+                printf("client timeout in delete\n");
             }
             else
             {
@@ -338,7 +337,7 @@ int main(int argc, char **argv)
             // timeout
             if (n < 0)
             {
-                printf("client timeout\n");
+                printf("client timeout in ls\n");
             }
             else
             {
@@ -352,7 +351,7 @@ int main(int argc, char **argv)
             n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen);
             if (n < 0)
             {
-                printf("client timeout\n");
+                printf("client timeout in exit\n");
             }
             else
             {

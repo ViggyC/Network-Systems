@@ -200,9 +200,10 @@ int main(int argc, char **argv)
                     /* CJ office hours: Need to do partial sends and receives if file is greater than buffer size! */
                     while (sent < fsize)
                     {
+                        // printf("large file\n");
                         bzero(buf, sizeof(buf));
                         /* what we need to send is still more than what we can fit */
-                        if (fsize - sent > BUFSIZE)
+                        if ((fsize - sent) > BUFSIZE)
                         {
                             fread(buf, sizeof(char), BUFSIZE, file_send);
                             n = sendto(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
@@ -214,7 +215,7 @@ int main(int argc, char **argv)
                         else
                         {
                             /*other wise just send whats left over, it should fit */
-                            fread(buf, sizeof(char), BUFSIZE, file_send);
+                            fread(buf, sizeof(char), fsize - sent, file_send);
                             n = sendto(sockfd, buf, fsize - sent, 0, (struct sockaddr *)&clientaddr, clientlen);
                             // printf("buf: %s \n", buf);
                             if (n < 0)
@@ -222,6 +223,7 @@ int main(int argc, char **argv)
                             sent += n;
                         }
                     }
+                    printf("Total bytes sent: %lu\n", sent);
                 }
             }
 
@@ -273,51 +275,37 @@ int main(int argc, char **argv)
                    hostp->h_name, hostaddrp);
             printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
             long received = 0;
+            bzero(buf, sizeof(buf));
 
             if (BUFSIZE > size_of_file)
             {
                 bzero(buf, sizeof(buf));
                 n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, &clientlen); // this call blocks!!!!
                 fwrite(buf, 1, n, file_get);
-                fclose(file_get);
                 printf("server received datagram from %s (%s)\n",
                        hostp->h_name, hostaddrp);
                 printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
+                fclose(file_get);
             }
             else
             {
                 while (received < size_of_file)
                 {
+                    // printf("large file alert!\n");
                     bzero(buf, sizeof(buf));
-                    /* what we need to send is still more than what we can fit */
-                    if (size_of_file - received > BUFSIZE)
-                    {
-                        n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, &clientlen); // this call blocks!!!!
-                        fwrite(buf, 1, n, file_get);
-                        // printf("buf %s: \n", buf);
-                        if (n < 0)
-                            error("ERROR in sendto");
-                        received += n;
-                        printf("server received datagram from %s (%s)\n", hostp->h_name, hostaddrp);
-                        printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
-                    }
-                    else
-                    {
-                        /*other wise just send whats left over, it should fit */
-                        n = recvfrom(sockfd, buf, size_of_file - received, 0, (struct sockaddr *)&clientaddr, &clientlen); // this call blocks!!!!
-                        fwrite(buf, 1, n, file_get);
-
-                        // printf("buf: %s \n", buf);
-
-                        if (n < 0)
-                            error("ERROR in sendto");
-                        received += n;
-                        printf("server received datagram from %s (%s)\n", hostp->h_name, hostaddrp);
-                        printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
-                    }
+                    n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, &clientlen); // this call blocks!!!!
+                    // printf("buf %s: \n", buf);
+                    if (n < 0)
+                        error("ERROR in recvfrom");
+                    fwrite(buf, 1, n, file_get);
+                    received += n;
+                    printf("server received datagram from %s (%s)\n", hostp->h_name, hostaddrp);
+                    printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
                 }
+                printf("closing file\n");
                 fclose(file_get);
             }
+            printf("Received %lu bytes\n", received);
             char msg[] = "PUT successful";
             bzero(buf, sizeof(buf));
             strcpy(buf, msg);
