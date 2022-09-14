@@ -189,8 +189,8 @@ int main(int argc, char **argv)
                 bzero(buf, sizeof(buf));
                 n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen); // this call blocks!!!!
                 fwrite(buf, 1, n, file_get);
-                printf("Get Successful\n");
                 printf("Received %d bytes\n", n);
+                printf("Get Successful\n");
                 fclose(file_get);
             }
             else
@@ -214,9 +214,8 @@ int main(int argc, char **argv)
                         received += n;
                     }
                 }
-                printf("Get Successful\n");
                 printf("Received %lu bytes\n", received);
-
+                printf("Get Successful\n");
                 fclose(file_get);
             }
         }
@@ -286,7 +285,7 @@ int main(int argc, char **argv)
                         {
                             fread(buf, sizeof(char), BUFSIZE, file_send);
                             n = sendto(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, serverlen);
-                            usleep(10000);
+                            usleep(15000);
                             // printf("buf: %s \n", buf);
                             if (n < 0)
                                 error("ERROR in sendto");
@@ -297,7 +296,7 @@ int main(int argc, char **argv)
                             /*other wise just send whats left over, it should fit */
                             fread(buf, sizeof(char), fsize - sent, file_send);
                             n = sendto(sockfd, buf, fsize - sent, 0, (struct sockaddr *)&serveraddr, serverlen);
-                            usleep(10000);
+                            usleep(15000);
 
                             // printf("buf: %s \n", buf);
                             if (n < 0)

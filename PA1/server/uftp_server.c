@@ -115,6 +115,11 @@ int main(int argc, char **argv)
          * recvfrom: receive a UDP datagram from a client, client must pass its own address info thru socket?
          */
         // printf("top marker\n");
+        struct timeval tv;
+        tv.tv_sec = 0;
+        tv.tv_usec = 0;
+        setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
         bzero(buf, sizeof(buf));
         n = recvfrom(sockfd, buf, BUFSIZE, 0,
                      (struct sockaddr *)&clientaddr, &clientlen); // stores client message in buf, this function blocks
@@ -234,12 +239,12 @@ int main(int argc, char **argv)
             /* https://stackoverflow.com/questions/4181784/how-to-set-socket-timeout-in-c-when-making-multiple-connections */
             /* https://stackoverflow.com/questions/13547721/udp-socket-set-timeout */
             /* COME BACK TO THIS */
-            // struct timeval tv;
-            // tv.tv_sec = 5;
-            // tv.tv_usec = 0;
-            // if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO,&tv,sizeof(tv)) < 0) {
-            //     perror("Error");
-            // }
+            tv.tv_sec = 5;
+            tv.tv_usec = 0;
+            if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
+            {
+                perror("Error");
+            }
 
             FILE *file_get;
             // write the contents on server_response into file_get: EVERYTHING IN UNIX IS A FILE!!!
@@ -293,7 +298,7 @@ int main(int argc, char **argv)
                 fwrite(buf, 1, n, file_get);
                 printf("server received datagram from %s (%s)\n",
                        hostp->h_name, hostaddrp);
-                printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
+                printf("server received %lu/%d bytes\n", strlen(buf), n);
                 fclose(file_get);
                 char msg[] = "PUT successful";
                 bzero(buf, sizeof(buf));
@@ -311,6 +316,7 @@ int main(int argc, char **argv)
                     if (n < 0)
                     {
                         printf("Server timeout\n");
+                        break;
                         // error("ERROR in recvfrom");
                     }
                     else
@@ -319,7 +325,7 @@ int main(int argc, char **argv)
                         received += n;
                     }
                     printf("server received datagram from %s (%s)\n", hostp->h_name, hostaddrp);
-                    printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
+                    printf("server received %lu/%d bytes\n", strlen(buf), n);
                 }
 
                 // printf("closing file\n");
@@ -330,6 +336,10 @@ int main(int argc, char **argv)
                 strcpy(buf, msg);
                 n = sendto(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
             }
+
+            /* reset to 0 so no timeout occurs for further operations */
+            tv.tv_sec = 0;
+            tv.tv_usec = 0;
         }
         else if (strcmp(command, "delete") == 0)
         {
