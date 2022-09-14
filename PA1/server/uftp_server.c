@@ -13,11 +13,12 @@
 #include <netdb.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <dirent.h>
 
-#define BUFSIZE 1024
+#define BUFSIZE 13000
 
 /*
 Workflow:
@@ -60,13 +61,8 @@ int main(int argc, char **argv)
     int n;                         /* message byte size */
     char *command;
     char *file_requested;
-    char error_message[BUFSIZE] = "Invalid request!";
+    char error_message[] = "Invalid request!";
     int size_of_file;
-
-    /* https://stackoverflow.com/questions/4181784/how-to-set-socket-timeout-in-c-when-making-multiple-connections */
-    struct timeval timeout;
-    timeout.tv_sec = 10;
-    timeout.tv_usec = 0;
 
     /*
      * check command line arguments
@@ -125,7 +121,7 @@ int main(int argc, char **argv)
 
         if (n < 0)
         {
-            error("ERROR in recvfrom");
+            printf("waiting for client request\n");
         }
 
         // printf("Server got %s from client\n", buf); // need to parse this.....ugh
@@ -207,6 +203,8 @@ int main(int argc, char **argv)
                         {
                             fread(buf, sizeof(char), BUFSIZE, file_send);
                             n = sendto(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
+                            usleep(10000); // shoutout Jarek in class!
+
                             // printf("buf: %s \n", buf);
                             if (n < 0)
                                 error("ERROR in sendto");
@@ -217,6 +215,7 @@ int main(int argc, char **argv)
                             /*other wise just send whats left over, it should fit */
                             fread(buf, sizeof(char), fsize - sent, file_send);
                             n = sendto(sockfd, buf, fsize - sent, 0, (struct sockaddr *)&clientaddr, clientlen);
+                            usleep(10000);
                             // printf("buf: %s \n", buf);
                             if (n < 0)
                                 error("ERROR in sendto");
@@ -231,6 +230,16 @@ int main(int argc, char **argv)
         }
         else if (strcmp(command, "put") == 0)
         {
+
+            /* https://stackoverflow.com/questions/4181784/how-to-set-socket-timeout-in-c-when-making-multiple-connections */
+            /* https://stackoverflow.com/questions/13547721/udp-socket-set-timeout */
+            /* COME BACK TO THIS */
+            // struct timeval tv;
+            // tv.tv_sec = 5;
+            // tv.tv_usec = 0;
+            // if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO,&tv,sizeof(tv)) < 0) {
+            //     perror("Error");
+            // }
 
             FILE *file_get;
             // write the contents on server_response into file_get: EVERYTHING IN UNIX IS A FILE!!!
@@ -286,6 +295,10 @@ int main(int argc, char **argv)
                        hostp->h_name, hostaddrp);
                 printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
                 fclose(file_get);
+                char msg[] = "PUT successful";
+                bzero(buf, sizeof(buf));
+                strcpy(buf, msg);
+                n = sendto(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
             }
             else
             {
@@ -296,20 +309,27 @@ int main(int argc, char **argv)
                     n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, &clientlen); // this call blocks!!!!
                     // printf("buf %s: \n", buf);
                     if (n < 0)
-                        error("ERROR in recvfrom");
-                    fwrite(buf, 1, n, file_get);
-                    received += n;
+                    {
+                        printf("Server timeout\n");
+                        // error("ERROR in recvfrom");
+                    }
+                    else
+                    {
+                        fwrite(buf, 1, n, file_get);
+                        received += n;
+                    }
                     printf("server received datagram from %s (%s)\n", hostp->h_name, hostaddrp);
                     printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
                 }
-                printf("closing file\n");
+
+                // printf("closing file\n");
                 fclose(file_get);
+                // printf("Received %lu bytes\n", received);
+                char msg[] = "PUT successful";
+                bzero(buf, sizeof(buf));
+                strcpy(buf, msg);
+                n = sendto(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
             }
-            printf("Received %lu bytes\n", received);
-            char msg[] = "PUT successful";
-            bzero(buf, sizeof(buf));
-            strcpy(buf, msg);
-            n = sendto(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
         }
         else if (strcmp(command, "delete") == 0)
         {
@@ -344,7 +364,7 @@ int main(int argc, char **argv)
 
                 printf("file requested: %s\n", file_requested);
 
-                char server_response[BUFSIZE];
+                char server_response[100];
                 snprintf(server_response, sizeof(server_response), "DELETE %s successful", file_requested);
                 if (remove(file_requested) == 0)
                 {
@@ -365,32 +385,48 @@ int main(int argc, char **argv)
         }
         else if (strcmp(command, "ls") == 0)
         {
-            /* Source: https://www.youtube.com/watch?v=0pjtn6HGPVI */
-            DIR *directory;
-            struct dirent *entry;
             char full_ls[BUFSIZE];
-            bzero(full_ls, sizeof(full_ls));
-            directory = opendir(".");
-            if (directory == NULL)
-            {
-                return 1;
-            }
 
-            /* Keep reading directory entries */
-            while ((entry = readdir(directory)) != NULL)
-            {
-                // printf("%s\n", entry->d_name);
-                /* Source for concatenating strings */
-                // https://stackoverflow.com/questions/2218290/concatenate-char-array-in-c
-                strcat(full_ls, entry->d_name);
-                strcat(full_ls, "\n");
-            }
+            FILE *fp;
+            int status;
+            char path[BUFSIZE];
+            /* SOURCE: https://pubs.opengroup.org/onlinepubs/009696799/functions/popen.html */
+            fp = popen("ls -l", "r");
+            if (fp == NULL)
+                /* Handle error */;
+
+            while (fgets(path, BUFSIZE, fp) != NULL)
+                // printf("%s", path);
+                strcat(full_ls, path);
+            strcat(full_ls, "\n");
+
+            /* Source: https://www.youtube.com/watch?v=0pjtn6HGPVI */
+            // DIR *directory;
+            // struct dirent *entry;
+            // char full_ls[BUFSIZE];
+            // bzero(full_ls, sizeof(full_ls));
+            // directory = opendir(".");
+            // if (directory == NULL)
+            // {
+            //     return 1;
+            // }
+
+            // /* Keep reading directory entries */
+            // while ((entry = readdir(directory)) != NULL)
+            // {
+            //     // printf("%s\n", entry->d_name);
+            //     /* Source for concatenating strings */
+            //     // https://stackoverflow.com/questions/2218290/concatenate-char-array-in-c
+            //     strcat(full_ls, entry->d_name);
+            //     strcat(full_ls, "\n");
+            // }
+
             n = sendto(sockfd, full_ls, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
 
-            if (closedir(directory) == -1)
-            {
-                error("Error closing directory");
-            }
+            // if (closedir(directory) == -1)
+            // {
+            //     error("Error closing directory");
+            // }
         }
         else if (strcmp(command, "exit") == 0)
 
