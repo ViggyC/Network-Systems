@@ -335,6 +335,7 @@ int main(int argc, char **argv)
                 bzero(buf, sizeof(buf));
                 strcpy(buf, msg);
                 n = sendto(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
+                printf("Received a total of %lu bytes\n", received);
             }
 
             /* reset to 0 so no timeout occurs for further operations */
