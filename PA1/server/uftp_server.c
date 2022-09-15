@@ -319,6 +319,7 @@ int main(int argc, char **argv)
             {
                 bzero(buf, sizeof(buf));
                 n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, &clientlen); // this call blocks!!!!
+                received += n;
                 fwrite(buf, 1, n, file_get);
                 printf("server received datagram from %s (%s)\n",
                        hostp->h_name, hostaddrp);
@@ -345,17 +346,16 @@ int main(int argc, char **argv)
                         received += n;
                     }
 
+                    printf("server received datagram from %s (%s)\n", hostp->h_name, hostaddrp);
+                    printf("server received %lu/%d bytes\n", strlen(buf), n);
+
                     /* Here send an ACK notifying the client that packet was received */
                     bzero(buf, sizeof(buf));
                     strcpy(buf, ACK);
                     n = sendto(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
-
-                    printf("server received datagram from %s (%s)\n", hostp->h_name, hostaddrp);
-                    printf("server received %lu/%d bytes\n", strlen(buf), n);
                 }
 
                 fclose(file_get);
-                // printf("Received %lu bytes\n", received);
             }
             printf("Received a total of %lu bytes\n", received);
 
@@ -459,6 +459,8 @@ int main(int argc, char **argv)
             // }
 
             n = sendto(sockfd, full_ls, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
+            if (n < 0)
+                error("ERROR in sendto");
 
             // if (closedir(directory) == -1)
             // {

@@ -290,6 +290,7 @@ int main(int argc, char **argv)
                     bzero(buf, sizeof(buf));
                     fread(buf, sizeof(char), BUFSIZE, file_send);
                     n = sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr *)&serveraddr, serverlen);
+                    sent += n;
                     if (n < 0)
                         error("ERROR in sendto");
                 }
