@@ -18,7 +18,7 @@
 #include <arpa/inet.h>
 #include <dirent.h>
 
-#define BUFSIZE 13000
+#define BUFSIZE 4096
 
 /*
 Workflow:
@@ -232,6 +232,8 @@ int main(int argc, char **argv)
                             /* Receive ACK from server */
                             bzero(buf, sizeof(buf));
                             n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, &clientlen);
+                            printf("server received datagram from %s (%s)\n", hostp->h_name, hostaddrp);
+                            printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
                         }
                         else
                         {
@@ -308,11 +310,10 @@ int main(int argc, char **argv)
                 size_of_file = strtol(buf, &p, 10);
                 // printf("size of file: %lu \n", size_of_file);
             }
-            printf("server received datagram from %s (%s)\n",
+            printf("server received filesize datagram from %s (%s)\n",
                    hostp->h_name, hostaddrp);
             printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
             long received = 0;
-            bzero(buf, sizeof(buf));
 
             /* After getting the file size, server prepares to receive its contents */
             if (BUFSIZE > size_of_file)
@@ -333,6 +334,8 @@ int main(int argc, char **argv)
                     // printf("large file alert!\n");
                     bzero(buf, sizeof(buf));
                     n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, &clientlen); // this call blocks!!!!
+                    printf("server received datagram from %s (%s)\n", hostp->h_name, hostaddrp);
+                    printf("server received %lu/%d bytes\n", sizeof(buf), n);
                     // printf("buf %s: \n", buf);
                     if (n < 0)
                     {
@@ -346,15 +349,11 @@ int main(int argc, char **argv)
                         received += n;
                     }
 
-                    printf("server received datagram from %s (%s)\n", hostp->h_name, hostaddrp);
-                    printf("server received %lu/%d bytes\n", strlen(buf), n);
-
                     /* Here send an ACK notifying the client that packet was received */
                     bzero(buf, sizeof(buf));
                     strcpy(buf, ACK);
                     n = sendto(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
                 }
-
                 fclose(file_get);
             }
             printf("Received a total of %lu bytes\n", received);

@@ -16,7 +16,7 @@
 #include <sys/time.h>
 #include <netdb.h>
 
-#define BUFSIZE 13000
+#define BUFSIZE 4096
 
 typedef struct frame
 {
