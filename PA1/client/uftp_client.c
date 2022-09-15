@@ -18,6 +18,14 @@
 
 #define BUFSIZE 13000
 
+typedef struct frame
+{
+    int frame_type; // 0 for ACK, 1 for data
+    char data[1024];
+    int sq_no;
+    int ack;
+} Frame;
+
 void error(char *msg)
 {
     perror(msg);
@@ -37,6 +45,12 @@ int main(int argc, char **argv)
     char *command; // One of => GET PUT DELETE ls EXIT
     char *file_requested;
     long size_of_file;
+    char ACK[] = "+ACK";
+
+    Frame frame_send;
+    Frame frame_recv;
+    int frame_id = 0;     // initialize
+    int received_ack = 1; // flag 1 - ack received, 0 - ack not received, only for client
 
     /* check command line arguments */
     if (argc != 3)
@@ -213,6 +227,11 @@ int main(int argc, char **argv)
                         // printf("buf %s: \n", buf);
                         received += n;
                     }
+
+                    /* Here send an ACK notifying the client that packet was received */
+                    bzero(buf, sizeof(buf));
+                    strcpy(buf, ACK);
+                    n = sendto(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, serverlen);
                 }
                 printf("Received %lu bytes\n", received);
                 printf("Get Successful\n");
@@ -285,23 +304,34 @@ int main(int argc, char **argv)
                         {
                             fread(buf, sizeof(char), BUFSIZE, file_send);
                             n = sendto(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, serverlen);
-                            usleep(15000);
+
                             // printf("buf: %s \n", buf);
                             if (n < 0)
                                 error("ERROR in sendto");
                             sent += n;
+
+                            /* "Lazy" sleep solution */
+                            // usleep(15000);
+
+                            /* Receive ACK from server */
+                            bzero(buf, sizeof(buf));
+                            n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen);
                         }
                         else
                         {
                             /*other wise just send whats left over, it should fit */
                             fread(buf, sizeof(char), fsize - sent, file_send);
                             n = sendto(sockfd, buf, fsize - sent, 0, (struct sockaddr *)&serveraddr, serverlen);
-                            usleep(15000);
 
                             // printf("buf: %s \n", buf);
                             if (n < 0)
                                 error("ERROR in sendto");
                             sent += n;
+                            // usleep(15000);
+
+                            /* Receive ACK from server */
+                            bzero(buf, sizeof(buf));
+                            n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen);
                         }
                     }
                 }

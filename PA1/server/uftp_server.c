@@ -36,6 +36,13 @@ Most of the upd code is already implemented
 ***exit:
 
 */
+typedef struct frame
+{
+    int frame_type; // 0 for ACK, 1 for data
+    char data[1024];
+    int sq_no;
+    int ack;
+} Frame;
 
 void error(char *msg)
 {
@@ -63,6 +70,11 @@ int main(int argc, char **argv)
     char *file_requested;
     char error_message[] = "Invalid request!";
     int size_of_file;
+    char ACK[] = "+ACK";
+
+    Frame frame_send;
+    Frame frame_recv;
+    int frame_id = 0; // initialize
 
     /*
      * check command line arguments
@@ -208,23 +220,34 @@ int main(int argc, char **argv)
                         {
                             fread(buf, sizeof(char), BUFSIZE, file_send);
                             n = sendto(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
-                            usleep(10000); // shoutout Jarek in class!
 
                             // printf("buf: %s \n", buf);
                             if (n < 0)
                                 error("ERROR in sendto");
                             sent += n;
+
+                            /* Lazy sleep solution */
+                            // usleep(10000);
+
+                            /* Receive ACK from server */
+                            bzero(buf, sizeof(buf));
+                            n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, &clientlen);
                         }
                         else
                         {
                             /*other wise just send whats left over, it should fit */
                             fread(buf, sizeof(char), fsize - sent, file_send);
                             n = sendto(sockfd, buf, fsize - sent, 0, (struct sockaddr *)&clientaddr, clientlen);
-                            usleep(10000);
-                            // printf("buf: %s \n", buf);
                             if (n < 0)
                                 error("ERROR in sendto");
                             sent += n;
+
+                            /* Lazy sleep solution */
+                            // usleep(10000);
+
+                            /* Receive ACK from server */
+                            bzero(buf, sizeof(buf));
+                            n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, &clientlen);
                         }
                     }
                     printf("Total bytes sent: %lu\n", sent);
@@ -291,6 +314,7 @@ int main(int argc, char **argv)
             long received = 0;
             bzero(buf, sizeof(buf));
 
+            /* After getting the file size, server prepares to receive its contents */
             if (BUFSIZE > size_of_file)
             {
                 bzero(buf, sizeof(buf));
@@ -300,10 +324,6 @@ int main(int argc, char **argv)
                        hostp->h_name, hostaddrp);
                 printf("server received %lu/%d bytes\n", strlen(buf), n);
                 fclose(file_get);
-                char msg[] = "PUT successful";
-                bzero(buf, sizeof(buf));
-                strcpy(buf, msg);
-                n = sendto(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
             }
             else
             {
@@ -324,19 +344,25 @@ int main(int argc, char **argv)
                         fwrite(buf, 1, n, file_get);
                         received += n;
                     }
+
+                    /* Here send an ACK notifying the client that packet was received */
+                    bzero(buf, sizeof(buf));
+                    strcpy(buf, ACK);
+                    n = sendto(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
+
                     printf("server received datagram from %s (%s)\n", hostp->h_name, hostaddrp);
                     printf("server received %lu/%d bytes\n", strlen(buf), n);
                 }
 
-                // printf("closing file\n");
                 fclose(file_get);
                 // printf("Received %lu bytes\n", received);
-                char msg[] = "PUT successful";
-                bzero(buf, sizeof(buf));
-                strcpy(buf, msg);
-                n = sendto(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
-                printf("Received a total of %lu bytes\n", received);
             }
+            printf("Received a total of %lu bytes\n", received);
+
+            char msg[] = "PUT successful";
+            bzero(buf, sizeof(buf));
+            strcpy(buf, msg);
+            n = sendto(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
 
             /* reset to 0 so no timeout occurs for further operations */
             tv.tv_sec = 0;
