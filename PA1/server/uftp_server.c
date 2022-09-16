@@ -18,7 +18,7 @@
 #include <arpa/inet.h>
 #include <dirent.h>
 
-#define BUFSIZE 4096
+#define BUFSIZE 8192
 
 /*
 Workflow:
@@ -421,8 +421,7 @@ int main(int argc, char **argv)
         }
         else if (strcmp(command, "ls") == 0)
         {
-            char full_ls[BUFSIZE];
-
+            bzero(buf, sizeof(buf));
             FILE *fp;
             int status;
             char path[BUFSIZE];
@@ -433,8 +432,8 @@ int main(int argc, char **argv)
 
             while (fgets(path, BUFSIZE, fp) != NULL)
                 // printf("%s", path);
-                strcat(full_ls, path);
-            strcat(full_ls, "\n");
+                strcat(buf, path);
+            strcat(buf, "\n");
 
             /* Source: https://www.youtube.com/watch?v=0pjtn6HGPVI */
             // DIR *directory;
@@ -457,7 +456,7 @@ int main(int argc, char **argv)
             //     strcat(full_ls, "\n");
             // }
 
-            n = sendto(sockfd, full_ls, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
+            n = sendto(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
             if (n < 0)
                 error("ERROR in sendto");
 

@@ -16,7 +16,7 @@
 #include <sys/time.h>
 #include <netdb.h>
 
-#define BUFSIZE 4096
+#define BUFSIZE 8192
 
 typedef struct frame
 {
@@ -68,7 +68,7 @@ int main(int argc, char **argv)
 
     // https://stackoverflow.com/questions/13547721/udp-socket-set-timeout
     struct timeval tv;
-    tv.tv_sec = 5;
+    tv.tv_sec = 2;
     tv.tv_usec = 0;
     if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
     {
@@ -112,6 +112,12 @@ int main(int argc, char **argv)
         fgets(buf, BUFSIZE, stdin); // buf now stores the message to be sent to the server
         counter++;
         // printf("%d\n", counter);
+
+        if (strcmp(buf, "\n") == 0 || strcmp(buf, " \n") == 0)
+        {
+            printf("NOOOOOOO\n");
+            continue;
+        }
 
         buf[strlen(buf) - 1] = '\0'; // null terminator for new line in user input
 
