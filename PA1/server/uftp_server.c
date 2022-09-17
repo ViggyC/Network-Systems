@@ -62,7 +62,6 @@ int main(int argc, char **argv)
     struct hostent *hostp;         /* client host info */
     char buf[BUFSIZE];             /* message buf  from client*/
     char temp_buf[BUFSIZE];        // for parsing user input
-    char *array[2];                // for storing command and file - if one is requested
     char *hostaddrp;               /* dotted decimal host addr string */
     int optval;                    /* flag value for setsockopt */
     int n;                         /* message byte size */
@@ -423,7 +422,6 @@ int main(int argc, char **argv)
         {
             bzero(buf, sizeof(buf));
             FILE *fp;
-            int status;
             char path[BUFSIZE];
             /* SOURCE: https://pubs.opengroup.org/onlinepubs/009696799/functions/popen.html */
             fp = popen("ls -l", "r");
