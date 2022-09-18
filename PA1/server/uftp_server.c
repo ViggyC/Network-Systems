@@ -167,7 +167,7 @@ int main(int argc, char **argv)
             int fd = access(file_requested, F_OK | R_OK);
             if (!fd)
             {
-                file_send = fopen(file_requested, "rb");
+                file_send = fopen(file_requested, "r");
             }
             else
             {
@@ -187,7 +187,7 @@ int main(int argc, char **argv)
                 /* source: https://stackoverflow.com/questions/14002954/c-programming-how-to-read-the-whole-file-contents-into-a-buffer */
 
                 fseek(file_send, 0, SEEK_END);
-                long fsize = ftell(file_send);
+                ssize_t fsize = ftell(file_send);
                 fseek(file_send, 0, SEEK_SET);
                 // printf("Size of file requested: %lu \n", fsize);
                 bzero(buf, sizeof(buf));
@@ -201,11 +201,13 @@ int main(int argc, char **argv)
                 if (BUFSIZE > fsize)
                 {
                     bzero(buf, sizeof(buf));
-                    fread(buf, sizeof(char), BUFSIZE, file_send);
+                    ssize_t bytes_read = fread(buf, 1, fsize, file_send);
                     // printf("Contents of file_buffer: %s\n", buf);
-                    n = sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr *)&clientaddr, clientlen);
+                    n = sendto(sockfd, buf, bytes_read, 0, (struct sockaddr *)&clientaddr, clientlen);
+                    sent += n;
                     if (n < 0)
                         error("ERROR in sendto");
+                    // printf("Total bytes sent: %lu\n", sent);
                 }
                 else
                 {
@@ -217,8 +219,8 @@ int main(int argc, char **argv)
                         /* what we need to send is still more than what we can fit */
                         if ((fsize - sent) > BUFSIZE)
                         {
-                            fread(buf, sizeof(char), BUFSIZE, file_send);
-                            n = sendto(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
+                            ssize_t bytes_read = fread(buf, 1, BUFSIZE, file_send);
+                            n = sendto(sockfd, buf, bytes_read, 0, (struct sockaddr *)&clientaddr, clientlen);
 
                             // printf("buf: %s \n", buf);
                             if (n < 0)
@@ -237,8 +239,8 @@ int main(int argc, char **argv)
                         else
                         {
                             /*other wise just send whats left over, it should fit */
-                            fread(buf, sizeof(char), fsize - sent, file_send);
-                            n = sendto(sockfd, buf, fsize - sent, 0, (struct sockaddr *)&clientaddr, clientlen);
+                            ssize_t bytes_read = fread(buf, 1, fsize - sent, file_send);
+                            n = sendto(sockfd, buf, bytes_read, 0, (struct sockaddr *)&clientaddr, clientlen);
                             if (n < 0)
                                 error("ERROR in sendto");
                             sent += n;
@@ -297,12 +299,12 @@ int main(int argc, char **argv)
                     // printf("file: %s\n", file);
                     char *file_requested = file + 1;
                     // printf("file requested: %s\n",file_requested);
-                    file_get = fopen(file_requested, "wb");
+                    file_get = fopen(file_requested, "w+");
                 }
                 else
                 {
                     // printf("file requested: %s\n",file_requested);
-                    file_get = fopen(file_requested, "wb");
+                    file_get = fopen(file_requested, "w+");
                 }
 
                 char *p;
