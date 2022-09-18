@@ -156,9 +156,9 @@ int main(int argc, char **argv)
         if (hostaddrp == NULL)
             error("ERROR on inet_ntoa\n");
 
-        printf("server received datagram from %s (%s)\n",
-               hostp->h_name, hostaddrp);
-        printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
+        // printf("server received datagram from %s (%s)\n",
+        //        hostp->h_name, hostaddrp);
+        // printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
 
         if (strcmp(command, "get") == 0)
         {
