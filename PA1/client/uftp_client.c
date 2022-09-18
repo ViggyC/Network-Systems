@@ -209,7 +209,7 @@ int main(int argc, char **argv)
                 bzero(buf, sizeof(buf));
                 n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen); // this call blocks!!!!
                 fwrite(buf, 1, n, file_get);
-                printf("Received %d bytes\n", n);
+                // printf("Received %d bytes\n", n);
                 printf("Get Successful\n");
                 fclose(file_get);
             }
@@ -239,7 +239,7 @@ int main(int argc, char **argv)
                     strcpy(buf, ACK);
                     n = sendto(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, serverlen);
                 }
-                printf("Received %lu bytes\n", received);
+                // printf("Received %lu bytes\n", received);
                 printf("Get Successful\n");
                 fclose(file_get);
             }
@@ -288,7 +288,7 @@ int main(int argc, char **argv)
                 long sent = 0;
                 bzero(buf, sizeof(buf));
 
-                printf("File size: %lu\n", fsize);
+                // printf("File size: %lu\n", fsize);
 
                 /* buffer can fit all of the file! */
                 if (BUFSIZE > fsize)
@@ -343,7 +343,7 @@ int main(int argc, char **argv)
                     }
                 }
 
-                printf("Client sent %lu bytes\n", sent);
+                // printf("Client sent %lu bytes\n", sent);
                 fclose(file_send);
                 n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen); // this call blocks!!!!
 

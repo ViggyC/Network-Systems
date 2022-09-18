@@ -231,8 +231,8 @@ int main(int argc, char **argv)
                             /* Receive ACK from server */
                             bzero(buf, sizeof(buf));
                             n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, &clientlen);
-                            printf("server received datagram from %s (%s)\n", hostp->h_name, hostaddrp);
-                            printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
+                            // printf("server received datagram from %s (%s)\n", hostp->h_name, hostaddrp);
+                            // printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
                         }
                         else
                         {
@@ -251,7 +251,7 @@ int main(int argc, char **argv)
                             n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, &clientlen);
                         }
                     }
-                    printf("Total bytes sent: %lu\n", sent);
+                    // printf("Total bytes sent: %lu\n", sent);
                 }
             }
 
@@ -309,9 +309,9 @@ int main(int argc, char **argv)
                 size_of_file = strtol(buf, &p, 10);
                 // printf("size of file: %lu \n", size_of_file);
             }
-            printf("server received filesize datagram from %s (%s)\n",
-                   hostp->h_name, hostaddrp);
-            printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
+            // printf("server received filesize datagram from %s (%s)\n",
+            //        hostp->h_name, hostaddrp);
+            // printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
             long received = 0;
 
             /* After getting the file size, server prepares to receive its contents */
@@ -321,9 +321,9 @@ int main(int argc, char **argv)
                 n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, &clientlen); // this call blocks!!!!
                 received += n;
                 fwrite(buf, 1, n, file_get);
-                printf("server received datagram from %s (%s)\n",
-                       hostp->h_name, hostaddrp);
-                printf("server received %lu/%d bytes\n", strlen(buf), n);
+                // printf("server received datagram from %s (%s)\n",
+                //        hostp->h_name, hostaddrp);
+                // printf("server received %lu/%d bytes\n", strlen(buf), n);
                 fclose(file_get);
             }
             else
@@ -333,8 +333,8 @@ int main(int argc, char **argv)
                     // printf("large file alert!\n");
                     bzero(buf, sizeof(buf));
                     n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, &clientlen); // this call blocks!!!!
-                    printf("server received datagram from %s (%s)\n", hostp->h_name, hostaddrp);
-                    printf("server received %lu/%d bytes\n", sizeof(buf), n);
+                    // printf("server received datagram from %s (%s)\n", hostp->h_name, hostaddrp);
+                    // printf("server received %lu/%d bytes\n", sizeof(buf), n);
                     // printf("buf %s: \n", buf);
                     if (n < 0)
                     {
@@ -355,7 +355,7 @@ int main(int argc, char **argv)
                 }
                 fclose(file_get);
             }
-            printf("Received a total of %lu bytes\n", received);
+            // printf("Received a total of %lu bytes\n", received);
 
             char msg[] = "PUT successful";
             bzero(buf, sizeof(buf));
@@ -371,7 +371,7 @@ int main(int argc, char **argv)
             /* Delete source: https://www.tutorialkart.com/c-programming/c-delete-file/ */
             if (file_requested == NULL)
             {
-                printf("No file provided by client\n");
+                // printf("No file provided by client\n");
                 n = sendto(sockfd, error_message, BUFSIZE, 0, (struct sockaddr *)&clientaddr, clientlen);
                 if (n < 0)
                     error("ERROR in sendto");
@@ -388,16 +388,16 @@ int main(int argc, char **argv)
                     // printf("requesting: %s\n", file_requested);
                     /*SOURCE: https://stackoverflow.com/questions/19639288/c-split-a-string-and-select-last-element */
                     char *file = strrchr(file_requested, '/');
-                    printf("file: %s\n", file);
+                    // printf("file: %s\n", file);
                     char *file_requested = file + 1;
-                    printf("file requested: %s\n", file_requested);
+                    // printf("file requested: %s\n", file_requested);
                 }
                 else
                 {
                     // printf("file requested: %s\n",file_requested);
                 }
 
-                printf("file requested: %s\n", file_requested);
+                // printf("file requested: %s\n", file_requested);
 
                 char server_response[100];
                 snprintf(server_response, sizeof(server_response), "DELETE %s successful", file_requested);
@@ -414,9 +414,9 @@ int main(int argc, char **argv)
                 }
             }
 
-            printf("server received datagram from %s (%s)\n",
-                   hostp->h_name, hostaddrp);
-            printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
+            // printf("server received datagram from %s (%s)\n",
+            //        hostp->h_name, hostaddrp);
+            // printf("server received %lu/%d bytes: %s\n", strlen(buf), n, buf);
         }
         else if (strcmp(command, "ls") == 0)
         {
