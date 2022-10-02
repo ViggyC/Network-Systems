@@ -1,13 +1,32 @@
 #include <stdio.h>
+#include <unistd.h>
 #include <stdlib.h>
-#include <sys/socket.h>
+#include <string.h>
+#include <netdb.h>
 #include <sys/types.h>
-
+#include <sys/socket.h>
+#include <sys/time.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
+#include <dirent.h>
 #define BUFSIZE 8192
 
-struct HTTPHeader
+struct HTTPResponseHeader
 {
+    int status;
+    char *contentType;
+    int length;
+};
+
+enum CONTENT_TYPE
+{
+    text_html,
+    text_plain,
+    image_png,
+    image_gif,
+    image_jpg,
+    text_css,
+    application_javascript,
 };
 
 int main(int argc, char **argv)
@@ -18,11 +37,12 @@ int main(int argc, char **argv)
     struct sockaddr_in serveraddr; /* server's addr */
     struct sockaddr_in clientaddr; /* client addr */
     struct hostent *hostp;         /* client host info */
-    char buf[BUFSIZE];             /* message buf  from client*/
+    char buf[BUFSIZE];             /* message buf from client. This is the http request I think......*/
     char temp_buf[BUFSIZE];        // for parsing user input
     char *hostaddrp;               /* dotted decimal host addr string */
     int optval;                    /* flag value for setsockopt */
     int n;                         /* message byte size */
+    int client_socket;
 
     if (argc != 2)
     {
@@ -31,27 +51,65 @@ int main(int argc, char **argv)
     }
 
     portno = atoi(argv[1]);
-    char server_message[256] = "This is the server\n";
-    int network_socket = socket(AF_INET, SOCK_STREAM, 0);
+    char server_message[256] = "This is the webserver\n";
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
 
-    struct sockaddr_in server_address;
-    server_address.sin_family = AF_INET;
-    server_address.sin_port = htons(5000);
-    server_address.sin_addr.s_addr = INADDR_ANY; // resolved to any IP address on machine
+    serveraddr.sin_family = AF_INET;
+    serveraddr.sin_port = htons((unsigned short)portno);
+    serveraddr.sin_addr.s_addr = htonl(INADDR_ANY); // resolved to any IP address on machine
 
     // bind socket to specifed IP and port, using same port
-    bind(network_socket, (struct sockaddr *)&server_address, sizeof(server_address));
-    listen(network_socket, 5); // listening for connections from cleints
+    if (bind(sockfd, (struct sockaddr *)&serveraddr, sizeof(serveraddr)) < 0)
+    {
+        printf("Error binding\n");
+        exit(1);
+    }
 
-    int client_socket;
-    // accepting a connection means creating a client socket
-    client_socket = accept(network_socket, NULL, NULL);
-    /* Write logic for multiple connection */
+    listen(sockfd, 100); // listening for connections from cleints
+    printf("Listening on port %d\n", portno);
 
-    // send a message to the connection stream
-    send(client_socket, server_message, sizeof(server_message), 0);
+    /* continously handle client requests */
+    while (1)
+    {
+        // accepting a connection means creating a client socket
+        /* this client_socket is how we send data back to the connected client */
+        client_socket = accept(sockfd, NULL, NULL); // the client will connect() to the socket that the server is listening on
+        /* Write logic for multiple connection */
+        // FORK
 
-    pclose(network_socket);
+        // dummy response
+        send(client_socket, server_message, sizeof(server_message), 0);
+
+        memset(buf, 0, BUFSIZE);
+
+        // printf("Marker 1\n");
+        /* read from the socket */
+        n = recv(client_socket, buf, BUFSIZE, 0);
+        if (n < 0)
+        {
+            printf("Bad request\n");
+        }
+        printf("\nClient said:\n%s", buf);
+
+        /* send HTTP response back to client: webpage */
+
+        bzero(buf, sizeof(buf));
+        strcpy(buf, "200 OK\n");
+        // write(client_socket, buf, BUFSIZE);
+        send(client_socket, buf, sizeof(buf), 0);
+        close(client_socket);
+    }
+
+    close(sockfd);
+
+    return 0;
+}
+
+int handle_request(int client, char *file)
+{
+
+    FILE *fp; // file descriptor for page to send to client
+    ssize_t fsize;
 
     return 0;
 }
