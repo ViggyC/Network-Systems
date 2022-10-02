@@ -13,9 +13,24 @@
 
 struct HTTPResponseHeader
 {
+    int version;
     int status;
     char *contentType;
     int length;
+};
+
+/*
+Request Method: GET
+
+Request URI: /Protocols/rfc1945/rfc1945
+
+Request Version: HTTP/1.1
+*/
+struct HTTP_REQUEST
+{
+    char *method;
+    char *URI;
+    char *version;
 };
 
 enum CONTENT_TYPE
@@ -28,6 +43,17 @@ enum CONTENT_TYPE
     text_css,
     application_javascript,
 };
+
+/* different processes for different requests will be handling this routine */
+int handle_request(int client, char *buf)
+{
+    printf("Parsing the HTTP request in this routine \n");
+
+    FILE *fp; // file descriptor for page to send to client
+    ssize_t fsize;
+
+    return 0;
+}
 
 int main(int argc, char **argv)
 {
@@ -91,25 +117,19 @@ int main(int argc, char **argv)
         }
         printf("\nClient said:\n%s", buf);
 
-        /* send HTTP response back to client: webpage */
+        /* Parse request: GET /Protocols/rfc1945/rfc1945 HTTP/1.1 */
+        // int handle_result = handle_request(client_socket, buf);
 
+        /* send HTTP response back to client: webpage */
+        char *http_response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 13\r\n\r\nHello World!";
+        printf("%s\n", http_response);
         bzero(buf, sizeof(buf));
-        strcpy(buf, "200 OK\n");
-        // write(client_socket, buf, BUFSIZE);
+        strcpy(buf, http_response);
         send(client_socket, buf, sizeof(buf), 0);
         close(client_socket);
     }
 
     close(sockfd);
-
-    return 0;
-}
-
-int handle_request(int client, char *file)
-{
-
-    FILE *fp; // file descriptor for page to send to client
-    ssize_t fsize;
 
     return 0;
 }
