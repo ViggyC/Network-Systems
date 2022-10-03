@@ -161,11 +161,21 @@ int service_request(int client, void *client_args)
     // printf("HTTP version response: %s\n", http_response.version);
 
     /*open the URI*/
+    printf("URI path: %s\n", client_request->URI);
     char relative_path[TEMP_SIZE];
     bzero(relative_path, sizeof(relative_path)); // clear it!!!!!!!!!!
-    strcat(relative_path, "www");
-    strcat(relative_path, client_request->URI);
-    printf("Relative path: %s\n", relative_path);
+
+    /* Default / root page*/
+    if (strcmp(client_request->URI, "/") == 0)
+    {
+        strcpy(relative_path, "www/index.html");
+    }
+    else
+    {
+        strcat(relative_path, "www");
+        strcat(relative_path, client_request->URI);
+        printf("Relative path: %s\n", relative_path);
+    }
 
     fp = fopen(relative_path, "rb");
     if (fp == NULL)
