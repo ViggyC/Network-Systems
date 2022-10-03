@@ -48,9 +48,19 @@ enum CONTENT_TYPE
 int handle_request(int client, char *buf)
 {
     printf("Parsing the HTTP request in this routine \n");
+    printf("Client sent: %s\n", buf);
 
     FILE *fp; // file descriptor for page to send to client
     ssize_t fsize;
+
+    /* send HTTP response back to client: webpage */
+    char response[] = "HTTP/1.1 200 OK\r\nContent-Length: 13\r\nConnection: close\r\n\r\nHello, Client!";
+    // printf("%s\n", response);
+    bzero(buf, BUFSIZE);
+    strcpy(buf, response);
+    for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
+        ;
+    close(client);
 
     return 0;
 }
@@ -103,8 +113,8 @@ int main(int argc, char **argv)
         /* Write logic for multiple connection */
         // FORK
 
-        // dummy response
-        send(client_socket, server_message, sizeof(server_message), 0);
+        // dummy test response(use with NetCat)
+        // send(client_socket, server_message, sizeof(server_message), 0);
 
         memset(buf, 0, BUFSIZE);
 
@@ -115,18 +125,10 @@ int main(int argc, char **argv)
         {
             printf("Bad request\n");
         }
-        printf("\nClient said:\n%s", buf);
+        // printf("\nClient request:\n%s", buf);
 
         /* Parse request: GET /Protocols/rfc1945/rfc1945 HTTP/1.1 */
-        // int handle_result = handle_request(client_socket, buf);
-
-        /* send HTTP response back to client: webpage */
-        char response[] = "HTTP/1.1 200 OK\r\nContent-Length: 13\r\nConnection: close\r\n\r\nHello, world!";
-        printf("%s\n", response);
-        bzero(buf, sizeof(buf));
-        strcpy(buf, response);
-        send(client_socket, buf, sizeof(buf), 0);
-        close(client_socket);
+        int handle_result = handle_request(client_socket, buf);
     }
 
     close(sockfd);
