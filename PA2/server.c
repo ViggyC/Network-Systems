@@ -58,25 +58,25 @@ int getContentType(char *contentType, char *fileExtension)
     {
         strcpy(contentType, "text/plain");
     }
-    if (strcmp(fileExtension, ".png ") == 0)
+    if (strcmp(fileExtension, ".png") == 0)
     {
         strcpy(contentType, "img/png");
     }
-    if (strcmp(fileExtension, ".gif ") == 0)
+    if (strcmp(fileExtension, ".gif") == 0)
     {
         strcpy(contentType, "image/gif");
     }
-    if (strcmp(fileExtension, ".jpg ") == 0)
+    if (strcmp(fileExtension, ".jpg") == 0)
     {
         strcpy(contentType, "image/jpg");
     }
 
-    if (strcmp(fileExtension, ".css ") == 0)
+    if (strcmp(fileExtension, ".css") == 0)
     {
         strcpy(contentType, "text/css");
     }
 
-    if (strcmp(fileExtension, ".js ") == 0)
+    if (strcmp(fileExtension, ".js") == 0)
     {
         strcpy(contentType, "application/javascript");
     }
