@@ -121,10 +121,10 @@ int main(int argc, char **argv)
         // int handle_result = handle_request(client_socket, buf);
 
         /* send HTTP response back to client: webpage */
-        char *http_response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 13\r\n\r\nHello World!";
-        printf("%s\n", http_response);
+        char response[] = "HTTP/1.1 200 OK\r\nContent-Length: 13\r\nConnection: close\r\n\r\nHello, world!";
+        printf("%s\n", response);
         bzero(buf, sizeof(buf));
-        strcpy(buf, http_response);
+        strcpy(buf, response);
         send(client_socket, buf, sizeof(buf), 0);
         close(client_socket);
     }
