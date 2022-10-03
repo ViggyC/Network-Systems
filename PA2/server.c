@@ -10,14 +10,17 @@
 #include <arpa/inet.h>
 #include <dirent.h>
 #define BUFSIZE 8192
+#define TEMP_SIZE 1024
 
-struct HTTPResponseHeader
+/* Source: https://jameshfisher.com/2016/12/20/http-hello-world/ */
+
+typedef struct
 {
-    int version;
-    int status;
-    char *contentType;
+    char version[TEMP_SIZE];
+    char status[TEMP_SIZE];
+    char contentType[TEMP_SIZE];
     int length;
-};
+} HTTPResponseHeader;
 
 /*
 Request Method: GET
@@ -44,35 +47,208 @@ enum CONTENT_TYPE
     application_javascript,
 };
 
+int getContentType(char *contentType, char *fileExtension)
+{
+
+    if (strcmp(fileExtension, ".html") == 0)
+    {
+        strcpy(contentType, "text/html");
+    }
+    if (strcmp(fileExtension, ".txt") == 0)
+    {
+        strcpy(contentType, "text/plain");
+    }
+    if (strcmp(fileExtension, ".png ") == 0)
+    {
+        strcpy(contentType, "img/png");
+    }
+    if (strcmp(fileExtension, ".gif ") == 0)
+    {
+        strcpy(contentType, "image/gif");
+    }
+    if (strcmp(fileExtension, ".jpg ") == 0)
+    {
+        strcpy(contentType, "image/jpg");
+    }
+
+    if (strcmp(fileExtension, ".css ") == 0)
+    {
+        strcpy(contentType, "text/css");
+    }
+
+    if (strcmp(fileExtension, ".js ") == 0)
+    {
+        strcpy(contentType, "application/javascript");
+    }
+
+    return 0;
+}
+
+/********************************** Invalid Requests****************************************/
+int NotFound(int client)
+{
+
+    char response[] = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+    // snprintf(response);
+    /* review this method of sending to the client*/
+    for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
+        ;
+    close(client);
+
+    return 0;
+}
+
+int BadRequest(int client)
+{
+
+    char response[] = "HTTP/1.1 200 OK\r\nContent-Length: 13\r\nConnection: close\r\n\r\nHello World!";
+    // snprintf(response);
+    /* review this method of sending to the client*/
+    for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
+        ;
+    close(client);
+
+    return 0;
+}
+
+int MethodNotAllowed(int client)
+{
+    char response[] = "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+    // snprintf(response);
+    /* review this method of sending to the client*/
+    for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
+        ;
+    close(client);
+
+    return 0;
+}
+
+int Forbidden(int client)
+{
+    char response[] = "HTTP/1.1 200 OK\r\nContent-Length: 13\r\nConnection: close\r\n\r\nHello World!";
+    // snprintf(response);
+    /* review this method of sending to the client*/
+    for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
+        ;
+    close(client);
+
+    return 0;
+}
+
+int HTTPVersionNotSupported(int client)
+{
+    char response[] = "HTTP/1.1 505 HTTP Version Not Supported\r\nContent-Length: 0\r\nContent-Type: <>\r\nConnection: close\r\n\r\n";
+    // snprintf(response);
+    /* review this method of sending to the client*/
+    for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
+        ;
+    close(client);
+
+    return 0;
+}
+
+/**********************************End of Invalid Requests****************************************/
+
+int service_request(int client, void *client_args)
+{
+    HTTP_REQUEST *client_request = (HTTP_REQUEST *)client_args;
+    HTTPResponseHeader http_response; /* to send back to client*/
+    FILE *fp;                         // file descriptor for page to send to client
+    ssize_t fsize;
+
+    /* Just get version right away, part of server response*/
+    strcpy(http_response.version, client_request->version);
+    // printf("HTTP version response: %s\n", http_response.version);
+
+    /*open the URI*/
+    char relative_path[TEMP_SIZE];
+    bzero(relative_path, sizeof(relative_path)); // clear it!!!!!!!!!!
+    strcat(relative_path, "www");
+    strcat(relative_path, client_request->URI);
+    printf("Relative path: %s\n", relative_path);
+
+    fp = fopen(relative_path, "rb");
+    if (fp == NULL)
+    {
+        printf("File does not exist: send back 404\n");
+        NotFound(client);
+    }
+    fseek(fp, 0, SEEK_END);
+    fsize = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    printf("Content Length: %d\n", (int)fsize);
+
+    /* GET CONTENT TYPE!!!!!!*/
+    char *file_extention = strchr(relative_path, '.');
+    printf("%s\n", file_extention);
+    getContentType(http_response.contentType, file_extention);
+    printf("Reponse Content Type: %s\n", http_response.contentType);
+
+    /* Generate actual payload to send with header status*/
+    char payload[fsize];
+    fread(payload, 1, fsize, fp);
+
+    /*Generate response*/
+    /* send HTTP response back to client: webpage */
+    /* note the header must be very secific */
+    char response_header[BUFSIZE];
+    sprintf(response_header, "%s 200 OK\r\nContent-Type:%s\r\nContent-Length:%ld\r\n\r\n", http_response.version, http_response.contentType, fsize);
+    // printf("%s\n", response_header);
+    /* Now attach the payload*/
+    char full_response[fsize + strlen(response_header)];
+    strcpy(full_response, response_header);
+    // use memcpy() to attach payload to header
+    memcpy(full_response + strlen(full_response), payload, fsize);
+
+    /* review this method of sending to the client*/
+    for (int sent = 0; sent < sizeof(full_response); sent += send(client, full_response + sent, sizeof(full_response) - sent, 0))
+        ;
+    close(client);
+
+    return 0;
+}
+
 /* different processes for different requests will be handling this routine */
-int handle_request(int client, char *buf)
+/* Process will stay in this routine if 200 OK */
+int parse_request(int client, char *buf)
 {
     printf("Parsing the HTTP request in this routine \n");
+    buf[strlen(buf) - 1] = '\0';
     printf("Client sent: %s\n", buf);
-
-    FILE *fp; // file descriptor for page to send to client
-    ssize_t fsize;
 
     /*Parse client request*/
     HTTP_REQUEST client_request;
     char temp_buf[BUFSIZE];
     strcpy(temp_buf, buf);
     client_request.method = strtok(temp_buf, " "); // GET
-    client_request.URI = strtok(NULL, " ");        // route/URI
-    client_request.version = strtok(NULL, " ");    // route/URI
-    printf("HTTP mehthod: %s\n", client_request.method);
+    client_request.URI = strtok(NULL, " ");        // route/URI - relative path
+    client_request.version = strtok(NULL, "\r");   // version, end in \r
+    printf("HTTP method: %s\n", client_request.method);
     printf("HTTP page: %s\n", client_request.URI);
     printf("HTTP version: %s\n", client_request.version);
 
-        /* send HTTP response back to client: webpage */
-    /* note the header must be very secific */
-    char response[] = "HTTP/1.1 200 OK\r\nContent-Length: 13\r\nConnection: close\r\n\r\nI Am a webpage!";
-    // printf("%s\n", response);
-    bzero(buf, BUFSIZE);
-    strcpy(buf, response);
-    for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
-        ;
-    close(client);
+    client_request.method[strlen(client_request.method)] = '\0';
+    client_request.version[strlen(client_request.version)] = '\0';
+
+    if (strcmp(client_request.method, "GET") != 0)
+    {
+        printf("Method not allowed\n");
+        MethodNotAllowed(client);
+        return 0;
+    }
+    // printf("HTTP version: %s\n", client_request.version);
+    // printf("%d\n", strcmp(client_request.version, "HTTP/1.1"));
+    // printf("Browser version: %d\n", strcmp(client_request.version, "HTTP/1.1"));
+
+    if (strcmp(client_request.version, "HTTP/1.1") != 0)
+    {
+        printf("Invalid HTTP version\n");
+        HTTPVersionNotSupported(client);
+        return 0;
+    }
+
+    /* After parsing and hanlding bad requests, pass routine to service the actual file*/
+    int handle = service_request(client, &client_request);
 
     return 0;
 }
@@ -122,8 +298,7 @@ int main(int argc, char **argv)
         // accepting a connection means creating a client socket
         /* this client_socket is how we send data back to the connected client */
         client_socket = accept(sockfd, NULL, NULL); // the client will connect() to the socket that the server is listening on
-        /* Write logic for multiple connection */
-        // FORK
+        /* Write logic for multiple connections - fork() or threads */
 
         // dummy test response(use with NetCat)
         // send(client_socket, server_message, sizeof(server_message), 0);
@@ -139,7 +314,9 @@ int main(int argc, char **argv)
         }
 
         /* Parse request: GET /Protocols/rfc1945/rfc1945 HTTP/1.1 */
-        int handle_result = handle_request(client_socket, buf);
+        int handle_result = parse_request(client_socket, buf);
+
+        /* After parsing need to send response */
     }
 
     close(sockfd);
