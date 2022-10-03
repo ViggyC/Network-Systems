@@ -200,9 +200,8 @@ int service_request(int client, void *client_args)
     // use memcpy() to attach payload to header
     memcpy(full_response + strlen(full_response), payload, fsize);
 
-    /* review this method of sending to the client*/
-    for (int sent = 0; sent < sizeof(full_response); sent += send(client, full_response + sent, sizeof(full_response) - sent, 0))
-        ;
+    /* AND we got it! */
+    send(client, full_response, sizeof(full_response), 0);
     close(client);
 
     return 0;
