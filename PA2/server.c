@@ -1,3 +1,5 @@
+/*Author: Vignesh Chandrasekhar */
+
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -12,6 +14,7 @@
 #define BUFSIZE 8192
 #define TEMP_SIZE 1024
 
+/* Major note: all http response headers end in: \r\n\r\n */
 /* Source: https://jameshfisher.com/2016/12/20/http-hello-world/ */
 /*https://developer.mozilla.org/en-US/docs/Glossary/Response_header */
 
@@ -89,7 +92,8 @@ int getContentType(char *contentType, char *fileExtension)
 int NotFound(int client)
 {
 
-    char response[] = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+    /* what should this response actually look like*/
+    char response[] = "HTTP/1.1 404 Not Found\r\n\r\n";
     // snprintf(response);
     /* review this method of sending to the client*/
     for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
@@ -102,7 +106,7 @@ int NotFound(int client)
 int BadRequest(int client)
 {
 
-    char response[] = "HTTP/1.1 200 OK\r\nContent-Length: 13\r\nConnection: close\r\n\r\nHello World!";
+    char response[] = "HTTP/1.1 400 Bad Request\r\n\r\n";
     // snprintf(response);
     /* review this method of sending to the client*/
     for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
@@ -114,7 +118,8 @@ int BadRequest(int client)
 
 int MethodNotAllowed(int client)
 {
-    char response[] = "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+    /* what headers should I include*/
+    char response[] = "HTTP/1.1 405 Method Not Allowed\r\n\r\n";
     // snprintf(response);
     /* review this method of sending to the client*/
     for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
@@ -183,6 +188,8 @@ int service_request(int client, void *client_args)
     {
         printf("File does not exist: send back 404\n");
         NotFound(client);
+        printf("returned\n");
+        return 1;
     }
 
     /* Pulled from PA1*/
@@ -239,6 +246,7 @@ int parse_request(int client, char *buf)
     printf("HTTP page: %s\n", client_request.URI);
     printf("HTTP version: %s\n", client_request.version);
 
+    /* null terminating for safety*/
     client_request.method[strlen(client_request.method)] = '\0';
     client_request.version[strlen(client_request.version)] = '\0';
 
