@@ -26,12 +26,12 @@ Request URI: /Protocols/rfc1945/rfc1945
 
 Request Version: HTTP/1.1
 */
-struct HTTP_REQUEST
+typedef struct
 {
     char *method;
     char *URI;
     char *version;
-};
+} HTTP_REQUEST;
 
 enum CONTENT_TYPE
 {
@@ -53,8 +53,20 @@ int handle_request(int client, char *buf)
     FILE *fp; // file descriptor for page to send to client
     ssize_t fsize;
 
-    /* send HTTP response back to client: webpage */
-    char response[] = "HTTP/1.1 200 OK\r\nContent-Length: 13\r\nConnection: close\r\n\r\nHello, Client!";
+    /*Parse client request*/
+    HTTP_REQUEST client_request;
+    char temp_buf[BUFSIZE];
+    strcpy(temp_buf, buf);
+    client_request.method = strtok(temp_buf, " "); // GET
+    client_request.URI = strtok(NULL, " ");        // route/URI
+    client_request.version = strtok(NULL, " ");    // route/URI
+    printf("HTTP mehthod: %s\n", client_request.method);
+    printf("HTTP page: %s\n", client_request.URI);
+    printf("HTTP version: %s\n", client_request.version);
+
+        /* send HTTP response back to client: webpage */
+    /* note the header must be very secific */
+    char response[] = "HTTP/1.1 200 OK\r\nContent-Length: 13\r\nConnection: close\r\n\r\nI Am a webpage!";
     // printf("%s\n", response);
     bzero(buf, BUFSIZE);
     strcpy(buf, response);
@@ -125,7 +137,6 @@ int main(int argc, char **argv)
         {
             printf("Bad request\n");
         }
-        // printf("\nClient request:\n%s", buf);
 
         /* Parse request: GET /Protocols/rfc1945/rfc1945 HTTP/1.1 */
         int handle_result = handle_request(client_socket, buf);
