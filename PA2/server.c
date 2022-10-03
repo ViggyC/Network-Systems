@@ -183,6 +183,8 @@ int service_request(int client, void *client_args)
         printf("File does not exist: send back 404\n");
         NotFound(client);
     }
+
+    /* Pulled from PA1*/
     fseek(fp, 0, SEEK_END);
     fsize = ftell(fp);
     fseek(fp, 0, SEEK_SET);
@@ -257,6 +259,7 @@ int parse_request(int client, char *buf)
     }
 
     /* After parsing and hanlding bad requests, pass routine to service the actual file*/
+    /* Pass in client request struct as arg*/
     int handle = service_request(client, &client_request);
 
     return 0;
@@ -324,8 +327,7 @@ int main(int argc, char **argv)
 
         /* Parse request: GET /Protocols/rfc1945/rfc1945 HTTP/1.1 */
         int handle_result = parse_request(client_socket, buf);
-
-        /* After parsing need to send response */
+        /* After parsing need to send response, this is handled in parse_request() as well*/
     }
 
     close(sockfd);
