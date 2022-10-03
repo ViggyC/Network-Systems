@@ -13,6 +13,7 @@
 #define TEMP_SIZE 1024
 
 /* Source: https://jameshfisher.com/2016/12/20/http-hello-world/ */
+/*https://developer.mozilla.org/en-US/docs/Glossary/Response_header */
 
 typedef struct
 {
