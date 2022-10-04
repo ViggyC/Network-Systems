@@ -99,7 +99,6 @@ int NotFound(int client)
     for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
         ;
     close(client);
-
     return 0;
 }
 
@@ -112,7 +111,7 @@ int BadRequest(int client)
     for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
         ;
     close(client);
-
+    // return back main routine
     return 0;
 }
 
@@ -220,6 +219,7 @@ int service_request(int client, void *client_args)
 
     /* AND we got it! */
     send(client, full_response, sizeof(full_response), 0);
+    printf("Client request serviced\n");
     close(client);
 
     return 0;
@@ -248,6 +248,12 @@ int parse_request(int client, char *buf)
     client_request.method[strlen(client_request.method)] = '\0';
     client_request.version[strlen(client_request.version)] = '\0';
 
+    if (client_request.method == NULL || client_request.URI == NULL || client_request.version == NULL)
+    {
+        // bad request?
+        BadRequest(client);
+    }
+
     if (strcmp(client_request.method, "GET") != 0)
     {
         printf("Method not allowed\n");
@@ -258,7 +264,7 @@ int parse_request(int client, char *buf)
     // printf("%d\n", strcmp(client_request.version, "HTTP/1.1"));
     // printf("Browser version: %d\n", strcmp(client_request.version, "HTTP/1.1"));
 
-    if (strcmp(client_request.version, "HTTP/1.1") != 0 || strcmp(client_request.version, "HTTP/1.0") != 0)
+    if (strcmp(client_request.version, "HTTP/1.1") == 0 || strcmp(client_request.version, "HTTP/1.0") == 0)
     {
         // do nothing
     }
@@ -341,6 +347,7 @@ int main(int argc, char **argv)
         /* After parsing need to send response, this is handled in parse_request() as well*/
     }
 
+    // parent
     close(sockfd);
 
     return 0;
