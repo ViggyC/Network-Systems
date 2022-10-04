@@ -18,6 +18,8 @@
 /* Source: https://jameshfisher.com/2016/12/20/http-hello-world/ */
 /*https://developer.mozilla.org/en-US/docs/Glossary/Response_header */
 
+/* Need to figure out how accept() is handling different clients*/
+
 typedef struct
 {
     char version[TEMP_SIZE];
@@ -198,6 +200,11 @@ int service_request(int client, void *client_args)
     /* GET CONTENT TYPE!!!!!!*/
     char *file_extention = strchr(relative_path, '.');
     printf("%s\n", file_extention);
+    if (file_extention == NULL)
+    {
+        NotFound(client);
+        return 1;
+    }
     getContentType(http_response.contentType, file_extention);
     printf("Reponse Content Type: %s\n", http_response.contentType);
 
