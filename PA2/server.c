@@ -20,6 +20,11 @@
 
 /* Need to figure out how accept() is handling different clients*/
 
+/* The accept() call is used by a server to accept a
+connection request from a client. When a connection is available,
+the socket created is ready for use to read data from the process that requested the connection.
+The call accepts the first connection on its queue of pending connections for the given socket socket.*/
+
 typedef struct
 {
     char version[TEMP_SIZE];
@@ -285,6 +290,7 @@ int parse_request(int client, char *buf)
     /* After parsing and hanlding bad requests, pass routine to service the actual file*/
     /* Pass in client request struct as arg*/
     int handle = service_request(client, &client_request);
+    printf("Request handled\n");
 
     return 0;
 }
@@ -352,6 +358,7 @@ int main(int argc, char **argv)
         /* Parse request: GET /Protocols/rfc1945/rfc1945 HTTP/1.1 */
         int handle_result = parse_request(client_socket, buf);
         /* After parsing need to send response, this is handled in parse_request() as well*/
+        printf("Returned from routing\n");
     }
 
     // parent
