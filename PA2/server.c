@@ -91,9 +91,9 @@ int getContentType(char *contentType, char *fileExtension)
 /********************************** Invalid Requests****************************************/
 int NotFound(int client)
 {
-
+    printf("404 Not Found\n");
     /* what should this response actually look like*/
-    char response[] = "HTTP/1.1 404 Not Found\r\n\r\n";
+    char response[] = "HTTP/1.1 404 Not Foundr\nContent-Length: 18\r\n\r\n404 Page Not Found";
     // snprintf(response);
     /* review this method of sending to the client*/
     for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
@@ -131,7 +131,7 @@ int MethodNotAllowed(int client)
 
 int Forbidden(int client)
 {
-    char response[] = "HTTP/1.1 200 OK\r\nContent-Length: 13\r\nConnection: close\r\n\r\nHello World!";
+    char response[] = "HTTP/1.1 403 Forbidden\r\nContent-Length: 13\r\nConnection: close\r\n\r\nHello World!";
     // snprintf(response);
     /* review this method of sending to the client*/
     for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
@@ -186,9 +186,7 @@ int service_request(int client, void *client_args)
     fp = fopen(relative_path, "rb");
     if (fp == NULL)
     {
-        printf("File does not exist: send back 404\n");
         NotFound(client);
-        printf("returned\n");
         return 1;
     }
 
@@ -260,7 +258,11 @@ int parse_request(int client, char *buf)
     // printf("%d\n", strcmp(client_request.version, "HTTP/1.1"));
     // printf("Browser version: %d\n", strcmp(client_request.version, "HTTP/1.1"));
 
-    if (strcmp(client_request.version, "HTTP/1.1") != 0)
+    if (strcmp(client_request.version, "HTTP/1.1") != 0 || strcmp(client_request.version, "HTTP/1.0") != 0)
+    {
+        // do nothing
+    }
+    else
     {
         printf("Invalid HTTP version\n");
         HTTPVersionNotSupported(client);
