@@ -18,7 +18,7 @@
 /* Source: https://jameshfisher.com/2016/12/20/http-hello-world/ */
 /*https://developer.mozilla.org/en-US/docs/Glossary/Response_header */
 
-/* Need to figure out how accept() is handling different clients*/
+/* Need to figure out how accept() is handling different clients - it is blocking!!!!*/
 
 /* The accept() call is used by a server to accept a
 connection request from a client. When a connection is available,
@@ -100,7 +100,7 @@ int NotFound(int client)
 {
     printf("404 Not Found\n");
     /* what should this response actually look like*/
-    char response[] = "HTTP/1.1 404 Not Foundr\nContent-Length: 18\r\n\r\n404 Page Not Found";
+    char response[] = "HTTP/1.1 404 Not Found\r\nContent-Length: 18\r\n\r\n404 Page Not Found";
     // snprintf(response);
     /* review this method of sending to the client*/
     for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
@@ -137,7 +137,7 @@ int MethodNotAllowed(int client)
 
 int Forbidden(int client)
 {
-    char response[] = "HTTP/1.1 403 Forbidden\r\nContent-Length: 13\r\nConnection: close\r\n\r\nHello World!";
+    char response[] = "HTTP/1.1 403 Forbidden\r\nContent-Length: 13\r\nConnection: close\r\n\r\n";
     // snprintf(response);
     /* review this method of sending to the client*/
     for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
@@ -221,7 +221,7 @@ int service_request(int client, void *client_args)
     /* send HTTP response back to client: webpage */
     /* note the header must be very secific */
     char response_header[BUFSIZE];
-    sprintf(response_header, "%s 200 OK\r\nContent-Type:%s\r\nContent-Length:%ld\r\n\r\n", http_response.version, http_response.contentType, fsize);
+    sprintf(response_header, "%s 200 OK\r\nContent-Type:%s\r\nContent-Length:%ld\r\nConnection: close\r\n\r\n", http_response.version, http_response.contentType, fsize);
     // printf("%s\n", response_header);
     /* Now attach the payload*/
     char full_response[fsize + strlen(response_header)];
@@ -270,7 +270,6 @@ int parse_request(int client, char *buf)
     {
         printf("Method not allowed\n");
         MethodNotAllowed(client);
-        return 0;
     }
     // printf("HTTP version: %s\n", client_request.version);
     // printf("%d\n", strcmp(client_request.version, "HTTP/1.1"));
@@ -284,7 +283,6 @@ int parse_request(int client, char *buf)
     {
         printf("Invalid HTTP version\n");
         HTTPVersionNotSupported(client);
-        return 0;
     }
 
     /* After parsing and hanlding bad requests, pass routine to service the actual file*/
@@ -295,6 +293,23 @@ int parse_request(int client, char *buf)
     return 0;
 }
 
+int recvclient(int client, char *buf)
+{
+    /* read from the socket */
+    int n = recv(client, buf, BUFSIZE, 0);
+    if (n < 0)
+    {
+        printf("Bad request\n");
+    }
+
+    /* Parse request: GET /Protocols/rfc1945/rfc1945 HTTP/1.1 */
+    int handle_result = parse_request(client, buf);
+    /* After parsing need to send response, this is handled in parse_request() as well*/
+    printf("Returned from routing\n");
+
+    return 0; // exit or return?
+}
+
 int main(int argc, char **argv)
 {
     int sockfd;                    /* server socket file descriptor*/
@@ -303,12 +318,12 @@ int main(int argc, char **argv)
     struct sockaddr_in serveraddr; /* server's addr */
     struct sockaddr_in clientaddr; /* client addr */
     struct hostent *hostp;         /* client host info */
-    char buf[BUFSIZE];             /* message buf from client. This is the http request I think......*/
     char temp_buf[BUFSIZE];        // for parsing user input
     char *hostaddrp;               /* dotted decimal host addr string */
     int optval;                    /* flag value for setsockopt */
     int n;                         /* message byte size */
-    int client_socket;
+    int client_socket;             /* each process will have its own*/
+    int child_socket;
 
     if (argc != 2)
     {
@@ -318,11 +333,15 @@ int main(int argc, char **argv)
 
     portno = atoi(argv[1]);
     char server_message[256] = "This is the webserver\n";
+
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
 
+    memset(&serveraddr, '\0', sizeof(serveraddr));
     serveraddr.sin_family = AF_INET;
     serveraddr.sin_port = htons((unsigned short)portno);
     serveraddr.sin_addr.s_addr = htonl(INADDR_ANY); // resolved to any IP address on machine
+
+    clientlen = sizeof(struct sockaddr);
 
     // bind socket to specifed IP and port, using same port
     if (bind(sockfd, (struct sockaddr *)&serveraddr, sizeof(serveraddr)) < 0)
@@ -331,38 +350,67 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    listen(sockfd, 100); // listening for connections from cleints
-    printf("Listening on port %d\n", portno);
+    if (listen(sockfd, 100) == 0)
+    {
+        // listening for connections from cleints, need to determine how many
+        printf("Listening on port %d\n", portno);
+    }
+    else
+    {
+        // error
+        exit(1);
+    }
 
     /* continously handle client requests */
     while (1)
     {
         // accepting a connection means creating a client socket
         /* this client_socket is how we send data back to the connected client */
-        client_socket = accept(sockfd, NULL, NULL); // the client will connect() to the socket that the server is listening on
+        bzero(&clientaddr, sizeof(clientaddr));
+        // will always accept from the main socket that the parent created
+        client_socket = accept(sockfd, (struct sockaddr *)&clientaddr, &clientlen); // the client will connect() to the socket that the server is listening on
+                                                                                    // dummy test response(use with NetCat)
+                                                                                    // send(client_socket, server_message, sizeof(server_message), 0);
+
+        char buf[BUFSIZE]; /* message buf from client. This is the http request I think......*/
+        memset(buf, 0, BUFSIZE);
         /* Write logic for multiple connections - fork() or threads */
 
-        // dummy test response(use with NetCat)
-        // send(client_socket, server_message, sizeof(server_message), 0);
-
-        memset(buf, 0, BUFSIZE);
-
-        // printf("Marker 1\n");
-        /* read from the socket */
-        n = recv(client_socket, buf, BUFSIZE, 0);
-        if (n < 0)
+        pid_t child_client = fork();
+        if (child_client == 0)
         {
-            printf("Bad request\n");
+            // child - close parent socket in this context
+            close(sockfd);
+            printf("child process\n");
+            while (1)
+            {
+                n = recv(client_socket, buf, BUFSIZE, 0);
+                /* Parse request: GET /Protocols/rfc1945/rfc1945 HTTP/1.1 */
+                if (n == 0 || n < 0)
+                {
+                    exit(1);
+                }
+                printf("buffer: %s\n", buf);
+                int handle_result = parse_request(client_socket, buf);
+                /* After parsing need to send response, this is handled in parse_request() as well*/
+                memset(buf, 0, BUFSIZE);
+            }
         }
 
-        /* Parse request: GET /Protocols/rfc1945/rfc1945 HTTP/1.1 */
-        int handle_result = parse_request(client_socket, buf);
-        /* After parsing need to send response, this is handled in parse_request() as well*/
-        printf("Returned from routing\n");
+        // /* read from the socket */
+        // n = recv(client_socket, buf, BUFSIZE, 0);
+        // if (n == 0 || n < 0)
+        // {
+        //     exit(1);
+        // }
+
+        // /* Parse request: GET /Protocols/rfc1945/rfc1945 HTTP/1.1 */
+        // int handle_result = parse_request(client_socket, buf);
+        // /* After parsing need to send response, this is handled in parse_request() as well*/
+        // printf("Returned from routing\n");
     }
 
-    // parent
+    // parent shuts down the socket
     close(sockfd);
-
     return 0;
 }
