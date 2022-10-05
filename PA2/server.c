@@ -252,6 +252,7 @@ int parse_request(int client, char *buf)
     printf("HTTP page: %s\n", client_request.URI);
     printf("HTTP version: %s\n", client_request.version);
 
+    /* check this logic, sometimes recv() get an empty buffer*/
     if (client_request.method == NULL || client_request.URI == NULL || client_request.version == NULL)
     {
         // bad request?
@@ -393,10 +394,10 @@ int main(int argc, char **argv)
                 // client can keep sending requests
                 n = recv(client_socket, buf, BUFSIZE, 0);
                 /* Parse request: GET /Protocols/rfc1945/rfc1945 HTTP/1.1 */
-                if (n == 0 || n < 0)
-                {
-                    exit(1);
-                }
+                // if (n == 0 || n < 0)
+                // {
+                //     exit(1);
+                // }
                 // printf("buffer: %s\n", buf);
                 int handle_result = parse_request(client_socket, buf);
                 /* After parsing need to send response, this is handled in parse_request() as well*/
