@@ -105,7 +105,7 @@ int NotFound(int client)
     /* review this method of sending to the client*/
     for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
         ;
-    close(client);
+    // close(client);
     return 0;
 }
 
@@ -117,8 +117,8 @@ int BadRequest(int client)
     /* review this method of sending to the client*/
     for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
         ;
-    close(client);
-    // return back main routine
+    // close(client);
+    //  return back main routine
     return 0;
 }
 
@@ -130,7 +130,7 @@ int MethodNotAllowed(int client)
     /* review this method of sending to the client*/
     for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
         ;
-    close(client);
+    // close(client);
 
     return 0;
 }
@@ -193,7 +193,6 @@ int service_request(int client, void *client_args)
     if (fp == NULL)
     {
         NotFound(client);
-        return 1;
     }
 
     /* Pulled from PA1*/
@@ -208,7 +207,6 @@ int service_request(int client, void *client_args)
     if (file_extention == NULL)
     {
         NotFound(client);
-        return 1;
     }
     getContentType(http_response.contentType, file_extention);
     printf("Reponse Content Type: %s\n", http_response.contentType);
@@ -232,7 +230,7 @@ int service_request(int client, void *client_args)
     /* AND we got it! */
     send(client, full_response, sizeof(full_response), 0);
     printf("Client request serviced\n");
-    close(client);
+    // close(client);
 
     return 0;
 }
@@ -434,3 +432,4 @@ int main(int argc, char **argv)
 }
 
 /* Interesting observation: when using netcat, you can only send 1 request, this is because of the connection: close header*/
+/* When do we close the client?*/
