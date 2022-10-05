@@ -58,6 +58,12 @@ enum CONTENT_TYPE
     application_javascript,
 };
 
+void error(char *msg)
+{
+    perror(msg);
+    exit(0);
+}
+
 int getContentType(char *contentType, char *fileExtension)
 {
 
@@ -105,7 +111,7 @@ int NotFound(int client)
     /* review this method of sending to the client*/
     for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
         ;
-    // close(client);
+    close(client);
     return 0;
 }
 
@@ -117,7 +123,7 @@ int BadRequest(int client)
     /* review this method of sending to the client*/
     for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
         ;
-    // close(client);
+    close(client);
     //  return back main routine
     return 0;
 }
@@ -125,13 +131,12 @@ int BadRequest(int client)
 int MethodNotAllowed(int client)
 {
     /* what headers should I include*/
-    char response[] = "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 18\r\n\r\nMethod NOT Allowed";
+    char response[] = "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 18\r\nConnection: close\r\n\r\n";
     // snprintf(response);
     /* review this method of sending to the client*/
     for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
         ;
-    // close(client);
-
+    close(client);
     return 0;
 }
 
@@ -142,7 +147,7 @@ int Forbidden(int client)
     /* review this method of sending to the client*/
     for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
         ;
-
+    close(client);
     return 0;
 }
 
@@ -154,6 +159,7 @@ int HTTPVersionNotSupported(int client)
     for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
         ;
 
+    close(client);
     return 0;
 }
 
@@ -197,7 +203,7 @@ int service_request(int client, void *client_args)
     fseek(fp, 0, SEEK_END);
     fsize = ftell(fp);
     fseek(fp, 0, SEEK_SET);
-    printf("Content Length: %d\n", (int)fsize);
+    // printf("Content Length: %d\n", (int)fsize);
 
     /* GET CONTENT TYPE!!!!!!*/
     char *file_extention = strchr(relative_path, '.');
@@ -226,10 +232,12 @@ int service_request(int client, void *client_args)
     memcpy(full_response + strlen(full_response), payload, fsize);
 
     /* AND we got it! */
+    /* the child processes will all be sending to different {client} addresses, per parent accept() */
     send(client, full_response, sizeof(full_response), 0);
-    printf("Client request serviced\n");
-    // close(client);
-
+    printf("Client request serviced...closing socket\n");
+    close(client);
+    // exit program after closing socket
+    exit(1);
     return 0;
 }
 
@@ -291,23 +299,6 @@ int parse_request(int client, char *buf)
     return 0;
 }
 
-int recvclient(int client, char *buf)
-{
-    /* read from the socket */
-    int n = recv(client, buf, BUFSIZE, 0);
-    if (n < 0)
-    {
-        printf("Bad request\n");
-    }
-
-    /* Parse request: GET /Protocols/rfc1945/rfc1945 HTTP/1.1 */
-    int handle_result = parse_request(client, buf);
-    /* After parsing need to send response, this is handled in parse_request() as well*/
-    printf("Returned from parser and service.... returinging to \n");
-
-    return 0; // exit or return?
-}
-
 int main(int argc, char **argv)
 {
     int sockfd;                    /* server socket file descriptor*/
@@ -365,12 +356,24 @@ int main(int argc, char **argv)
         // accepting a connection means creating a client socket
         /* this client_socket is how we send data back to the connected client */
         bzero(&clientaddr, sizeof(clientaddr));
-        /*will always accept from the main socket that the parent created
-        Accept can only handle one connection at time
-         Thus, there is always one accept() invokation in the entire run of the program*/
-        /* Parent basically updated the client socket address for every iteration*/
-        client_socket = accept(sockfd, (struct sockaddr *)&clientaddr, &clientlen); // the client will connect() to the socket that the server is listening on
-        char buf[BUFSIZE];                                                          /* message buf from client. This is the http request I think......*/
+
+        //    Man Page - accept():
+        //    It extracts the first
+        //    connection request on the queue of pending connections for the
+        //    listening socket, sockfd, creates a new connected socket, and
+        //    returns a new file descriptor referring to that socket.  The
+        //    newly created socket is not in the listening state.  The original
+        //    socket sockfd is unaffected by this call.
+
+        client_socket = accept(sockfd, (struct sockaddr *)&clientaddr, &clientlen);
+        /* Parent basically updates the client socket address for every iteration, with a new socket for that client*/
+        // printf("Accept returned: %d\n", client_socket);
+
+        if (client_socket < 0)
+        {
+            error("ERROR accepting client connection");
+        }
+        char buf[BUFSIZE];
         memset(buf, 0, BUFSIZE);
         /* Write logic for multiple connections - fork() or threads */
 
@@ -380,29 +383,32 @@ int main(int argc, char **argv)
         /*Child Code*/
         if (client_connection == 0)
         {
-            // child - close parent socket in this context
+            // child - close socket in this context because there are two copies
             close(sockfd);
             printf("child process\n");
-
             /* The same client can have as many sequential requests as it wants*/
             /* Meanwhile, parent will be executing more fork calls*/
             /* The fork() was for different clients that may also have sequestial requests*/
             /* The child processes all have their own client addresses*/
             /* !!! Huge question: how do we only need one accept() - how can one accept() support multiple clients that have multiple requests? */
+            /* this while loop will work for connection keep-alive*/
             while (1)
             {
                 // client can keep sending requests
                 n = recv(client_socket, buf, BUFSIZE, 0);
                 /* Parse request: GET /Protocols/rfc1945/rfc1945 HTTP/1.1 */
-                // if (n == 0 || n < 0)
-                // {
-                //     exit(1);
-                // }
-                // printf("buffer: %s\n", buf);
+                if (n < 0)
+                {
+                    // printf("Client socket value: %d\n", client_socket);
+                    error("ERROR receiving from client");
+                }
+                // printf("buffer: %s\n; size: %d", buf, n);
                 int handle_result = parse_request(client_socket, buf);
                 /* After parsing need to send response, this is handled in parse_request() as well*/
+                /* meanwhile parent is creating more forks() for incoming requests*/
                 memset(buf, 0, BUFSIZE);
             }
+            /* when to close client socket*/
         }
         else
         {
@@ -430,5 +436,4 @@ int main(int argc, char **argv)
     return 0;
 }
 
-/* Interesting observation: when using netcat, you can only send 1 request, this is because of the connection: close header*/
 /* When do we close the client?*/
