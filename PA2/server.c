@@ -125,7 +125,7 @@ int BadRequest(int client)
 int MethodNotAllowed(int client)
 {
     /* what headers should I include*/
-    char response[] = "HTTP/1.1 405 Method Not Allowed\r\n\r\n";
+    char response[] = "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 18\r\n\r\nMethod NOT Allowed";
     // snprintf(response);
     /* review this method of sending to the client*/
     for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
