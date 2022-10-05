@@ -256,15 +256,16 @@ int parse_request(int client, char *buf)
     printf("HTTP page: %s\n", client_request.URI);
     printf("HTTP version: %s\n", client_request.version);
 
-    /* null terminating for safety*/
-    client_request.method[strlen(client_request.method)] = '\0';
-    client_request.version[strlen(client_request.version)] = '\0';
-
     if (client_request.method == NULL || client_request.URI == NULL || client_request.version == NULL)
     {
         // bad request?
+        printf("Bad request\n");
         BadRequest(client);
     }
+
+    /* null terminating for safety*/
+    client_request.method[strlen(client_request.method)] = '\0';
+    client_request.version[strlen(client_request.version)] = '\0';
 
     if (strcmp(client_request.method, "GET") != 0)
     {
@@ -305,7 +306,7 @@ int recvclient(int client, char *buf)
     /* Parse request: GET /Protocols/rfc1945/rfc1945 HTTP/1.1 */
     int handle_result = parse_request(client, buf);
     /* After parsing need to send response, this is handled in parse_request() as well*/
-    printf("Returned from routing\n");
+    printf("Returned from parser and service.... returinging to \n");
 
     return 0; // exit or return?
 }
@@ -367,34 +368,49 @@ int main(int argc, char **argv)
         // accepting a connection means creating a client socket
         /* this client_socket is how we send data back to the connected client */
         bzero(&clientaddr, sizeof(clientaddr));
-        // will always accept from the main socket that the parent created
+        /*will always accept from the main socket that the parent created
+        Accept can only handle one connection at time
+         Thus, there is always one accept() invokation in the entire run of the program*/
+        /* Parent basically updated the client socket address for every iteration*/
         client_socket = accept(sockfd, (struct sockaddr *)&clientaddr, &clientlen); // the client will connect() to the socket that the server is listening on
-                                                                                    // dummy test response(use with NetCat)
-                                                                                    // send(client_socket, server_message, sizeof(server_message), 0);
-
-        char buf[BUFSIZE]; /* message buf from client. This is the http request I think......*/
+        char buf[BUFSIZE];                                                          /* message buf from client. This is the http request I think......*/
         memset(buf, 0, BUFSIZE);
         /* Write logic for multiple connections - fork() or threads */
 
-        pid_t child_client = fork();
-        if (child_client == 0)
+        pid_t client_connection = fork();
+        /* Parent and Child will execute concurrently*/
+
+        /*Child Code*/
+        if (client_connection == 0)
         {
             // child - close parent socket in this context
             close(sockfd);
             printf("child process\n");
+
+            /* The same client can have as many sequential requests as it wants*/
+            /* Meanwhile, parent will be executing more fork calls*/
+            /* The fork() was for different clients that may also have sequestial requests*/
+            /* The child processes all have their own client addresses*/
+            /* !!! Huge question: how do we only need one accept() - how can one accept() support multiple clients that have multiple requests? */
             while (1)
             {
+                // client can keep sending requests
                 n = recv(client_socket, buf, BUFSIZE, 0);
                 /* Parse request: GET /Protocols/rfc1945/rfc1945 HTTP/1.1 */
                 if (n == 0 || n < 0)
                 {
                     exit(1);
                 }
-                printf("buffer: %s\n", buf);
+                // printf("buffer: %s\n", buf);
                 int handle_result = parse_request(client_socket, buf);
                 /* After parsing need to send response, this is handled in parse_request() as well*/
                 memset(buf, 0, BUFSIZE);
             }
+        }
+        else
+        {
+            /*Parent Code*/
+            printf("parent process\n");
         }
 
         // /* read from the socket */
@@ -407,10 +423,14 @@ int main(int argc, char **argv)
         // /* Parse request: GET /Protocols/rfc1945/rfc1945 HTTP/1.1 */
         // int handle_result = parse_request(client_socket, buf);
         // /* After parsing need to send response, this is handled in parse_request() as well*/
-        // printf("Returned from routing\n");
+
+        /*Parent goes back up to the loop to handle more clients, child may be running multiple requests*/
+        /* Server serving multiple clients at once*/
     }
 
-    // parent shuts down the socket
+    /*parent shuts down the socket*/
     close(sockfd);
     return 0;
 }
+
+/* Interesting observation: when using netcat, you can only send 1 request, this is because of the connection: close header*/
