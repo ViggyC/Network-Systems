@@ -142,7 +142,6 @@ int Forbidden(int client)
     /* review this method of sending to the client*/
     for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
         ;
-    close(client);
 
     return 0;
 }
@@ -154,7 +153,6 @@ int HTTPVersionNotSupported(int client)
     /* review this method of sending to the client*/
     for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
         ;
-    close(client);
 
     return 0;
 }
