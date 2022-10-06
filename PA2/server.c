@@ -238,7 +238,6 @@ int service_request(int client, void *client_args)
     close(client);
     // exit program after closing socket
     exit(1);
-    return 0;
 }
 
 /* different processes for different requests will be handling this routine */
@@ -383,7 +382,7 @@ int main(int argc, char **argv)
         /*Child Code*/
         if (client_connection == 0)
         {
-            // child - close socket in this context because there are two copies
+            // child - closes the LISTENING socket, this sockfd doesnt matter to the child, only the parent listening for incoming requests
             close(sockfd);
             printf("child process\n");
             /* The same client can have as many sequential requests as it wants*/
