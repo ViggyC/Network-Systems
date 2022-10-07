@@ -14,6 +14,8 @@
 #define BUFSIZE 8192
 #define TEMP_SIZE 1024
 
+/*https://www.stackpath.com/edge-academy/what-is-keep-alive/#:~:text=Overview,connection%20header%20can%20be%20used.*/
+
 /* Major note: all http response headers end in: \r\n\r\n */
 /* Source: https://jameshfisher.com/2016/12/20/http-hello-world/ */
 /*https://developer.mozilla.org/en-US/docs/Glossary/Response_header */
@@ -45,6 +47,8 @@ typedef struct
     char *method;
     char *URI;
     char *version;
+    char *connection;
+    char *host;
 } HTTP_REQUEST;
 
 enum CONTENT_TYPE
@@ -112,6 +116,8 @@ int NotFound(int client)
     for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
         ;
     close(client);
+    exit(1);
+
     return 0;
 }
 
@@ -125,6 +131,8 @@ int BadRequest(int client)
         ;
     close(client);
     //  return back main routine
+    exit(1);
+
     return 0;
 }
 
@@ -137,6 +145,8 @@ int MethodNotAllowed(int client)
     for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
         ;
     close(client);
+    exit(1);
+
     return 0;
 }
 
@@ -148,6 +158,8 @@ int Forbidden(int client)
     for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
         ;
     close(client);
+    exit(1);
+
     return 0;
 }
 
@@ -160,6 +172,8 @@ int HTTPVersionNotSupported(int client)
         ;
 
     close(client);
+    exit(1);
+
     return 0;
 }
 
@@ -207,7 +221,7 @@ int service_request(int client, void *client_args)
 
     /* GET CONTENT TYPE!!!!!!*/
     char *file_extention = strchr(relative_path, '.');
-    printf("%s\n", file_extention);
+    printf("File extension: %s\n", file_extention);
     if (file_extention == NULL)
     {
         NotFound(client);
@@ -246,7 +260,7 @@ int parse_request(int client, char *buf)
 {
     printf("Parsing the HTTP request in this routine \n");
     buf[strlen(buf) - 1] = '\0';
-    printf("Client sent: %s\n", buf);
+    printf("Client sent:\n%s\n", buf);
 
     /*Parse client request*/
     HTTP_REQUEST client_request;
@@ -255,9 +269,17 @@ int parse_request(int client, char *buf)
     client_request.method = strtok(temp_buf, " "); // GET
     client_request.URI = strtok(NULL, " ");        // route/URI - relative path
     client_request.version = strtok(NULL, "\r");   // version, end in \r
+    strtok(NULL, " ");
+    client_request.host = strtok(NULL, "\r");
+    strtok(NULL, " ");
+    client_request.connection = strtok(NULL, "\r");
+
+    printf("Relevant client header:\n");
     printf("HTTP method: %s\n", client_request.method);
     printf("HTTP page: %s\n", client_request.URI);
     printf("HTTP version: %s\n", client_request.version);
+    printf("HTTP host: %s\n", client_request.host);
+    printf("HTTP connection: %s\n", client_request.connection);
 
     /* check this logic, sometimes recv() get an empty buffer*/
     if (client_request.method == NULL || client_request.URI == NULL || client_request.version == NULL)
