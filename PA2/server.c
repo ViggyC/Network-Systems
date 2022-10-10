@@ -7,6 +7,7 @@
 #include <netdb.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -75,34 +76,47 @@ int getContentType(char *contentType, char *fileExtension)
     {
         strcpy(contentType, "text/html");
     }
-    if (strcmp(fileExtension, ".txt") == 0)
+    else if (strcmp(fileExtension, ".txt") == 0)
     {
         strcpy(contentType, "text/plain");
     }
-    if (strcmp(fileExtension, ".png") == 0)
+    else if (strcmp(fileExtension, ".png") == 0)
     {
         strcpy(contentType, "img/png");
     }
-    if (strcmp(fileExtension, ".gif") == 0)
+    else if (strcmp(fileExtension, ".gif") == 0)
     {
         strcpy(contentType, "image/gif");
     }
-    if (strcmp(fileExtension, ".jpg") == 0)
+    else if (strcmp(fileExtension, ".jpg") == 0)
     {
         strcpy(contentType, "image/jpg");
     }
 
-    if (strcmp(fileExtension, ".css") == 0)
+    else if (strcmp(fileExtension, ".css") == 0)
     {
         strcpy(contentType, "text/css");
     }
 
-    if (strcmp(fileExtension, ".js") == 0)
+    else if (strcmp(fileExtension, ".js") == 0)
     {
         strcpy(contentType, "application/javascript");
     }
 
+    else if (strcmp(fileExtension, ".ico") == 0)
+    {
+        strcpy(contentType, "image/x-icon");
+    }
+
     return 0;
+}
+
+int isDirectory(const char *path)
+{
+    struct stat statbuf;
+    if (stat(path, &statbuf) != 0)
+        return 0;
+    return S_ISDIR(statbuf.st_mode);
 }
 
 /********************************** Invalid Requests****************************************/
@@ -110,7 +124,7 @@ int NotFound(int client)
 {
     printf("404 Not Found\n");
     /* what should this response actually look like*/
-    char response[] = "HTTP/1.1 404 Not Found\r\nContent-Length: 18\r\n\r\n404 Page Not Found";
+    char response[] = "HTTP/1.1 404 Not Found\r\nContent-Length: 18\r\nConnection: close\r\n\r\n404 Page Not Found";
     // snprintf(response);
     /* review this method of sending to the client*/
     for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
@@ -124,7 +138,7 @@ int NotFound(int client)
 int BadRequest(int client)
 {
 
-    char response[] = "HTTP/1.1 400 Bad Request\r\n\r\n";
+    char response[] = "HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n";
     // snprintf(response);
     /* review this method of sending to the client*/
     for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
@@ -191,21 +205,24 @@ int service_request(int client, void *client_args)
     // printf("HTTP version response: %s\n", http_response.version);
 
     /*open the URI*/
-    printf("URI path: %s\n", client_request->URI);
+    // printf("URI path: %s\n", client_request->URI);
     char relative_path[TEMP_SIZE];
     bzero(relative_path, sizeof(relative_path)); // clear it!!!!!!!!!!
 
-    /* Default / root page*/
+    /* hard code root directory www*/
+    strcat(relative_path, "www");
+    strcat(relative_path, client_request->URI);
     if (strcmp(client_request->URI, "/") == 0)
     {
-        strcpy(relative_path, "www/index.html");
+        strcat(relative_path, "/index.html");
     }
-    else
+    else if (isDirectory(relative_path) == 1)
     {
-        strcat(relative_path, "www");
-        strcat(relative_path, client_request->URI);
-        printf("Relative path: %s\n", relative_path);
+        printf("This is a directory\n");
+        strcat(relative_path, "/index.html");
     }
+
+    printf("Relative path: %s\n", relative_path);
 
     fp = fopen(relative_path, "rb");
     if (fp == NULL)
@@ -221,13 +238,13 @@ int service_request(int client, void *client_args)
 
     /* GET CONTENT TYPE!!!!!!*/
     char *file_extention = strchr(relative_path, '.');
-    printf("File extension: %s\n", file_extention);
+    // printf("File extension: %s\n", file_extention);
     if (file_extention == NULL)
     {
         NotFound(client);
     }
     getContentType(http_response.contentType, file_extention);
-    printf("Reponse Content Type: %s\n", http_response.contentType);
+    // printf("Reponse Content Type: %s\n", http_response.contentType);
 
     /* Generate actual payload to send with header status*/
     char payload[fsize];
@@ -237,8 +254,9 @@ int service_request(int client, void *client_args)
     /* send HTTP response back to client: webpage */
     /* note the header must be very secific */
     char response_header[BUFSIZE];
+    //\r\nConnection: close
     sprintf(response_header, "%s 200 OK\r\nContent-Type:%s\r\nContent-Length:%ld\r\nConnection: close\r\n\r\n", http_response.version, http_response.contentType, fsize);
-    // printf("%s\n", response_header);
+    printf("%s\n", response_header);
     /* Now attach the payload*/
     char full_response[fsize + strlen(response_header)];
     strcpy(full_response, response_header);
@@ -281,12 +299,31 @@ int parse_request(int client, char *buf)
     printf("HTTP host: %s\n", client_request.host);
     printf("HTTP connection: %s\n", client_request.connection);
 
+    // if (strcmp(client_request.connection, "keep-alive") == 0)
+    // {
+    //     int flags = 1;
+    //     if (setsockopt(client, SOL_SOCKET, SO_KEEPALIVE, (void *)&flags, sizeof(flags)))
+    //     {
+    //         perror("ERROR: setsocketopt(), SO_KEEPALIVE");
+    //         exit(0);
+    //     }
+    // }
+
     /* check this logic, sometimes recv() get an empty buffer*/
     if (client_request.method == NULL || client_request.URI == NULL || client_request.version == NULL)
     {
         // bad request?
         printf("Bad request\n");
         BadRequest(client);
+    }
+
+    char badURI[3];
+    bzero(badURI, sizeof(badURI));
+    strncpy(badURI, client_request.URI, 3);
+    // printf("bad uri: %s", badURI);
+    if (strcmp(badURI, "/..") == 0)
+    {
+        Forbidden(client);
     }
 
     /* null terminating for safety*/
