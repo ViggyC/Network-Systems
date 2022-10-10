@@ -85,7 +85,7 @@ void sigint_handler(int sig)
 int getContentType(char *contentType, char *fileExtension)
 {
 
-    if (strcmp(fileExtension, ".html") == 0)
+    if (strcmp(fileExtension, ".html") == 0 || strcmp(fileExtension, ".htm") == 0)
     {
         strcpy(contentType, "text/html");
     }
@@ -237,18 +237,39 @@ int service_request(int client, void *client_args)
     if (strcmp(client_request->URI, "/") == 0)
     {
         strcat(relative_path, "index.html");
+        fp = fopen(relative_path, "rb");
+        if (fp == NULL)
+        {
+
+            bzero(relative_path, sizeof(relative_path)); // clear it!!!!!!!!!!
+            strcat(relative_path, "www");
+            strcat(relative_path, client_request->URI);
+            strcat(relative_path, "index.htm");
+            printf("index.html does not exist\n");
+            printf("Relative path: %s\n", relative_path);
+        }
     }
     else if (isDirectory(relative_path) != 0)
     {
         printf("This is a directory\n");
         strcat(relative_path, "/index.html");
+        fp = fopen(relative_path, "rb");
+        if (fp == NULL)
+        {
+
+            bzero(relative_path, sizeof(relative_path)); // clear it!!!!!!!!!!
+            strcat(relative_path, "www");
+            strcat(relative_path, client_request->URI);
+            strcat(relative_path, "/index.htm");
+            // printf("index.html does not exist\n");
+            // printf("Relative path: %s\n", relative_path);
+        }
     }
-
     printf("Relative path: %s\n", relative_path);
-
     fp = fopen(relative_path, "rb");
     if (fp == NULL)
     {
+        printf("%s DOES NOT EXIST!\n", relative_path);
         NotFound(client);
     }
 
@@ -256,7 +277,6 @@ int service_request(int client, void *client_args)
     fseek(fp, 0, SEEK_END);
     fsize = ftell(fp);
     fseek(fp, 0, SEEK_SET);
-    // printf("Content Length: %d\n", (int)fsize);
 
     /* GET CONTENT TYPE!!!!!!*/
     char *file_extention = strchr(relative_path, '.');
@@ -287,10 +307,9 @@ int service_request(int client, void *client_args)
     // }
 
     /* use for non extra credit*/
-    //\r\nConnection: close
     sprintf(response_header, "%s 200 OK\r\nContent-Type:%s\r\nContent-Length:%ld\r\n\r\n", http_response.version, http_response.contentType, fsize);
 
-    printf("HTTP response header: \n");
+    printf("RESPONSE: \n");
     printf("%s\n", response_header);
     /* Now attach the payload*/
     char full_response[fsize + strlen(response_header)];
@@ -528,4 +547,4 @@ int main(int argc, char **argv)
     return 0;
 }
 
-/* When do we close the client?*/
+/* When do we close the client for keep-alive?*/
