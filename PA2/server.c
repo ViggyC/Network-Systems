@@ -34,6 +34,7 @@ typedef struct
     char version[TEMP_SIZE];
     char status[TEMP_SIZE];
     char contentType[TEMP_SIZE];
+    char connection[TEMP_SIZE];
     int length;
 } HTTPResponseHeader;
 
@@ -69,15 +70,16 @@ void error(char *msg)
     perror(msg);
     exit(0);
 }
+
+/* Graceful Exit*/
 void sigint_handler(int sig)
 {
 
     printf("child pid:%d\n", getpid());
     printf("parent pid:%d\n", getppid());
-
-    kill(-getpid(), SIGKILL);
+    // kill(-getpid(), SIGKILL);
     printf("Exiting!\n");
-    exit(0);
+    exit(1);
 }
 
 int getContentType(char *contentType, char *fileExtension)
@@ -133,69 +135,76 @@ int isDirectory(const char *path)
 /********************************** Invalid Requests****************************************/
 int NotFound(int client)
 {
-    printf("404 Not Found\n");
     /* what should this response actually look like*/
-    char response[] = "HTTP/1.1 404 Not Found\r\nContent-Length: 18\r\nConnection: close\r\n\r\n404 Page Not Found";
+    char response[] = "HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\nContent-Length: 18\r\n\r\n404 Page Not Found";
     // snprintf(response);
     /* review this method of sending to the client*/
     for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
         ;
+    printf("HTTP RESPONSE: \n");
+    printf("%s\n", response);
     close(client);
     exit(1);
-
     return 0;
 }
 
 int BadRequest(int client)
 {
 
-    char response[] = "HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n";
+    char response[] = "HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\nContent-Length: 0\r\n\r\n";
     // snprintf(response);
     /* review this method of sending to the client*/
     for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
         ;
+    printf("HTTP RESPONSE: \n");
+    printf("%s\n", response);
     close(client);
-    //  return back main routine
     exit(1);
-
     return 0;
 }
 
 int MethodNotAllowed(int client)
 {
     /* what headers should I include*/
-    char response[] = "HTTP/1.1 405 Method Not Allowed\r\nConnection: close\r\n\r\n";
+    char response[] = "HTTP/1.1 405 Method Not Allowed\r\nContent-Type: text/plain\r\nContent-Length: 0\r\n\r\n";
     // snprintf(response);
     /* review this method of sending to the client*/
     for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
         ;
+    printf("HTTP RESPONSE: \n");
+    printf("%s\n", response);
     close(client);
-    exit(1);
+    exit(0);
 
     return 0;
 }
 
 int Forbidden(int client)
 {
-    char response[] = "HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n";
+    char response[] = "HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nContent-Length: 0\r\n\r\n";
     // snprintf(response);
     /* review this method of sending to the client*/
     for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
         ;
+
+    printf("HTTP RESPONSE: \n");
+    printf("%s\n", response);
     close(client);
-    exit(1);
+    exit(0);
 
     return 0;
 }
 
 int HTTPVersionNotSupported(int client)
 {
-    char response[] = "HTTP/1.1 505 HTTP Version Not Supported\r\nContent-Length: 0\r\nContent-Type: <>\r\nConnection: close\r\n\r\n";
+    char response[] = "HTTP/1.1 505 HTTP Version Not Supported\r\nContent-Type: text/plain\r\nContent-Length: 0\r\n\r\n";
     // snprintf(response);
     /* review this method of sending to the client*/
     for (int sent = 0; sent < sizeof(response); sent += send(client, response + sent, sizeof(response) - sent, 0))
         ;
 
+    printf("HTTP RESPONSE: \n");
+    printf("%s\n", response);
     close(client);
     exit(1);
 
@@ -206,6 +215,7 @@ int HTTPVersionNotSupported(int client)
 
 int service_request(int client, void *client_args)
 {
+
     HTTP_REQUEST *client_request = (HTTP_REQUEST *)client_args;
     HTTPResponseHeader http_response; /* to send back to client*/
     FILE *fp;                         // file descriptor for page to send to client
@@ -213,10 +223,11 @@ int service_request(int client, void *client_args)
 
     /* Just get version right away, part of server response*/
     strcpy(http_response.version, client_request->version);
+    strcpy(http_response.connection, client_request->connection);
+
     // printf("HTTP version response: %s\n", http_response.version);
 
     /*open the URI*/
-    // printf("URI path: %s\n", client_request->URI);
     char relative_path[TEMP_SIZE];
     bzero(relative_path, sizeof(relative_path)); // clear it!!!!!!!!!!
 
@@ -267,15 +278,19 @@ int service_request(int client, void *client_args)
     char response_header[BUFSIZE];
     // if (strcmp(client_request->connection, "keep-alive") == 0)
     // {
-    //     sprintf(response_header, "%s 200 OK\r\nContent-Type:%s\r\nContent-Length:%ld\r\nConnection: keep-alive\r\n\r\n", http_response.version, http_response.contentType, fsize);
+
+    //     sprintf(response_header, "%s 200 OK\r\nContent-Type: %s\r\nContent-Length: %ld\r\nConnection: %s\r\n\r\n", http_response.version, http_response.contentType, fsize, http_response.connection);
     // }
     // else
     // {
-    //     sprintf(response_header, "%s 200 OK\r\nContent-Type:%s\r\nContent-Length:%ld\r\nConnection: close\r\n\r\n", http_response.version, http_response.contentType, fsize);
+    //     sprintf(response_header, "%s 200 OK\r\nContent-Type:%s\r\nContent-Length:%ld\r\nConnection: %s\r\n\r\n", http_response.version, http_response.contentType, fsize, http_response.connection);
     // }
-    sprintf(response_header, "%s 200 OK\r\nContent-Type:%s\r\nContent-Length:%ld\r\nConnection: close\r\n\r\n", http_response.version, http_response.contentType, fsize);
 
-    printf("HTTP RESPONSE: \n");
+    /* use for non extra credit*/
+    //\r\nConnection: close
+    sprintf(response_header, "%s 200 OK\r\nContent-Type:%s\r\nContent-Length:%ld\r\n\r\n", http_response.version, http_response.contentType, fsize);
+
+    printf("HTTP response header: \n");
     printf("%s\n", response_header);
     /* Now attach the payload*/
     char full_response[fsize + strlen(response_header)];
@@ -285,13 +300,6 @@ int service_request(int client, void *client_args)
     /* AND we got it! */
     /* the child processes will all be sending to different {client} addresses, per parent accept() */
     send(client, full_response, sizeof(full_response), 0);
-
-    /* if request was connection: close then close the socket*/
-    // if (strcmp(client_request->connection, "close") == 0)
-    // {
-    //     close(client);
-    //     exit(1);
-    // }
     return 0;
 }
 
@@ -301,7 +309,7 @@ int parse_request(int client, char *buf)
 {
     // printf("Parsing the HTTP request in this routine \n");
     buf[strlen(buf) - 1] = '\0';
-    printf("Client Request:\n%s\n", buf);
+    // printf("Client Request:\n%s\n", buf);
 
     /*Parse client request*/
     HTTP_REQUEST client_request;
@@ -315,22 +323,11 @@ int parse_request(int client, char *buf)
     strtok(NULL, " ");
     client_request.connection = strtok(NULL, "\r");
 
-    printf("HTTP method: %s\n", client_request.method);
-    printf("HTTP page: %s\n", client_request.URI);
-    printf("HTTP version: %s\n", client_request.version);
-    printf("HTTP host: %s\n", client_request.host);
-    printf("HTTP connection: %s\n", client_request.connection);
-
-    /* Connection: keep-alive */
-    // if (strcmp(client_request.connection, "keep-alive") == 0)
-    // {
-    //     int flags = 1;
-    //     if (setsockopt(client, SOL_SOCKET, SO_KEEPALIVE, (void *)&flags, sizeof(flags)))
-    //     {
-    //         perror("ERROR: setsocketopt(), SO_KEEPALIVE");
-    //         exit(0);
-    //     }
-    // }
+    printf("REQUEST method: %s\n", client_request.method);
+    printf("REQUEST page: %s\n", client_request.URI);
+    printf("REQUEST version: %s\n", client_request.version);
+    printf("REQUEST host: %s\n", client_request.host);
+    printf("REQUEST connection: %s\n", client_request.connection);
 
     /* check this logic, sometimes recv() get an empty buffer*/
     if (client_request.method == NULL || client_request.URI == NULL || client_request.version == NULL)
@@ -340,12 +337,14 @@ int parse_request(int client, char *buf)
         BadRequest(client);
     }
 
-    char badURI[3];
-    bzero(badURI, sizeof(badURI));
-    strncpy(badURI, client_request.URI, 3);
-    // printf("bad uri: %s", badURI);
-    if (strcmp(badURI, "/..") == 0)
+    /* Only required for HTTP1/1.1*/
+    // if( (client_request.host == NULL || client_request.connection == NULL) {
+
+    // }
+
+    if (strstr(client_request.URI, "..") != NULL)
     {
+        // printf("Bad url: ..\n");
         Forbidden(client);
     }
 
@@ -372,8 +371,20 @@ int parse_request(int client, char *buf)
         HTTPVersionNotSupported(client);
     }
 
+    /* Connection: keep-alive */
+    // if (strcmp(client_request.connection, "keep-alive") == 0)
+    // {
+    //     int flags = 1;
+    //     if (setsockopt(client, SOL_SOCKET, SO_KEEPALIVE, (void *)&flags, sizeof(flags)))
+    //     {
+    //         perror("ERROR: setsocketopt(), SO_KEEPALIVE");
+    //         exit(0);
+    //     }
+    // }
+
     /* After parsing and hanlding bad requests, pass routine to service the actual file*/
     /* Pass in client request struct as arg*/
+
     int handle = service_request(client, &client_request);
     return 0;
 }
@@ -404,6 +415,15 @@ int main(int argc, char **argv)
 
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
 
+    /* setsockopt: Handy debugging trick that lets
+     * us rerun the server immediately after we kill it;
+     * otherwise we have to wait about 20 secs.
+     * Eliminates "ERROR on binding: Address already in use" error.
+     */
+    optval = 1;
+    setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR,
+               (const void *)&optval, sizeof(int));
+
     memset(&serveraddr, '\0', sizeof(serveraddr));
     serveraddr.sin_family = AF_INET;
     serveraddr.sin_port = htons((unsigned short)portno);
@@ -418,7 +438,7 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    if (listen(sockfd, 100) == 0)
+    if (listen(sockfd, 1024) == 0)
     {
         // listening for connections from cleints, need to determine how many
         printf("Listening on port %d\n", portno);
@@ -434,7 +454,7 @@ int main(int argc, char **argv)
     {
         // accepting a connection means creating a client socket
         /* this client_socket is how we send data back to the connected client */
-        bzero(&clientaddr, sizeof(clientaddr));
+        // bzero(&clientaddr, sizeof(clientaddr));
 
         //    Man Page - accept():
         //    It extracts the first
@@ -456,7 +476,7 @@ int main(int argc, char **argv)
         memset(buf, 0, BUFSIZE);
         /* Write logic for multiple connections - fork() or threads */
 
-        /*TODO graceful exit*/
+        /*TODO: graceful exit*/
         signal(SIGINT, sigint_handler);
 
         /* Parent spawns child processes to handle incoming requests*/
@@ -467,64 +487,40 @@ int main(int argc, char **argv)
         {
             // child - closes the LISTENING socket, this sockfd doesnt matter to the child, only the parent listening for incoming requests
             close(sockfd);
-            printf("child process\n");
+            // printf("child process\n");
             /* The same client can have as many sequential requests as it wants*/
             /* Meanwhile, parent will be executing more fork calls*/
             /* The fork() was for different clients that may also have sequestial requests*/
             /* The child processes all have their own client addresses*/
             /* !!! Huge question: how do we only need one accept() - how can one accept() support multiple clients that have multiple requests? */
             /* this while loop will work for connection keep-alive*/
-            while (1)
+            // while (1)
+            // {
+
+            // client can keep sending requests
+            n = recv(client_socket, buf, BUFSIZE, 0);
+            /* Parse request: GET /Protocols/rfc1945/rfc1945 HTTP/1.1 */
+            if (n < 0)
             {
-                /* Keep alive timout*/
-                // struct timeval tv;
-                // tv.tv_sec = 10;
-                // tv.tv_usec = 0;
-                // if (setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
-                // {
-                //     perror("Error");
-                // }
-                // client can keep sending requests
-                n = recv(client_socket, buf, BUFSIZE, 0);
-                /* Parse request: GET /Protocols/rfc1945/rfc1945 HTTP/1.1 */
-                if (n < 0)
-                {
-                    printf("Client socket value: %d\n", client_socket);
-                    printf("timout\n");
-                    close(client_socket);
-                    exit(1);
-                    // error("ERROR receiving from client");
-                }
-                // printf("buffer: %s\n; size: %d", buf, n);
-                int handle_result = parse_request(client_socket, buf);
-                printf("Client request serviced...\n");
+                printf("timout\n");
                 close(client_socket);
                 exit(1);
-                /* After parsing need to send response, this is handled in parse_request() as well*/
-                /* meanwhile parent is creating more forks() for incoming requests*/
-                memset(buf, 0, BUFSIZE);
+                // error("ERROR receiving from client");
             }
-            /* when to close client socket*/
+
+            int handle_result = parse_request(client_socket, buf);
+            // printf("Client request serviced...\n");
+            memset(buf, 0, BUFSIZE);
+
+            close(client_socket);
+            exit(0);
+            /* After parsing need to send response, this is handled in parse_request() as well*/
+            /* meanwhile parent is creating more forks() for incoming requests*/
+            //}
         }
-        else
-        {
-            /*Parent Code*/
-            printf("parent process\n");
-        }
-
-        // /* read from the socket */
-        // n = recv(client_socket, buf, BUFSIZE, 0);
-        // if (n == 0 || n < 0)
-        // {
-        //     exit(1);
-        // }
-
-        // /* Parse request: GET /Protocols/rfc1945/rfc1945 HTTP/1.1 */
-        // int handle_result = parse_request(client_socket, buf);
-        // /* After parsing need to send response, this is handled in parse_request() as well*/
-
+        /* Parent needs to close client socket*/
+        close(client_socket);
         /*Parent goes back up to the loop to handle more clients, child may be running multiple requests*/
-        /* Server serving multiple clients at once*/
     }
 
     /*parent shuts down the socket*/
