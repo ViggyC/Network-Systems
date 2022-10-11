@@ -1,4 +1,5 @@
 /*Author: Vignesh Chandrasekhar */
+/*Collaborators: Freddy Perez and James V*/
 
 #include <stdio.h>
 #include <unistd.h>
@@ -77,9 +78,10 @@ void sigint_handler(int sig)
 
     printf("child pid:%d\n", getpid());
     printf("parent pid:%d\n", getppid());
-    // kill(-getpid(), SIGKILL);
-    printf("Exiting!\n");
-    exit(1);
+    //-1 means wait for anychild process
+    waitpid(-1, NULL, WNOHANG);
+    printf("Exiting...\n");
+    exit(0);
 }
 
 int getContentType(char *contentType, char *fileExtension)
@@ -223,9 +225,13 @@ int service_request(int client, void *client_args)
 
     /* Just get version right away, part of server response*/
     strcpy(http_response.version, client_request->version);
-    strcpy(http_response.connection, client_request->connection);
-
     // printf("HTTP version response: %s\n", http_response.version);
+
+    /* Some client may not send a connection type - dumb*/
+    if (client_request->connection != NULL)
+    {
+        strcpy(http_response.connection, client_request->connection);
+    }
 
     /*open the URI*/
     char relative_path[TEMP_SIZE];
@@ -234,6 +240,7 @@ int service_request(int client, void *client_args)
     /* hard code root directory www*/
     strcat(relative_path, "www");
     strcat(relative_path, client_request->URI);
+
     if (strcmp(client_request->URI, "/") == 0)
     {
         strcat(relative_path, "index.html");
@@ -403,7 +410,6 @@ int parse_request(int client, char *buf)
 
     /* After parsing and hanlding bad requests, pass routine to service the actual file*/
     /* Pass in client request struct as arg*/
-
     int handle = service_request(client, &client_request);
     return 0;
 }
@@ -539,6 +545,7 @@ int main(int argc, char **argv)
         }
         /* Parent needs to close client socket*/
         close(client_socket);
+
         /*Parent goes back up to the loop to handle more clients, child may be running multiple requests*/
     }
 
