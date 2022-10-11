@@ -342,16 +342,15 @@ int parse_request(int client, char *buf)
     strcpy(temp_buf, buf);
     client_request.method = strtok(temp_buf, " "); // GET
     client_request.URI = strtok(NULL, " ");        // route/URI - relative path
-    client_request.version = strtok(NULL, "\r");   // version, end in \r
-    strtok(NULL, " ");
-    client_request.host = strtok(NULL, "\r");
-    strtok(NULL, " ");
-    client_request.connection = strtok(NULL, "\r");
+    client_request.version = strtok(NULL, "\r\n"); // version, end in \r
+    char *connection_type = strstr(buf, "Connection");
+    printf("connection type: %s\n", connection_type);
+    strtok(connection_type, " ");
+    client_request.connection = strtok(NULL, "\r\n");
 
     printf("REQUEST method: %s\n", client_request.method);
     printf("REQUEST page: %s\n", client_request.URI);
     printf("REQUEST version: %s\n", client_request.version);
-    printf("REQUEST host: %s\n", client_request.host);
     printf("REQUEST connection: %s\n", client_request.connection);
 
     /*This sleep is a debugging method to see the children during the graceful exit*/
@@ -399,18 +398,6 @@ int parse_request(int client, char *buf)
         printf("Invalid HTTP version\n");
         HTTPVersionNotSupported(client);
     }
-
-    /* Connection: keep-alive */
-    // if (strcmp(client_request.connection, "keep-alive") == 0)
-    // {
-    //     int flags = 1;
-    //     if (setsockopt(client, SOL_SOCKET, SO_KEEPALIVE, (void *)&flags, sizeof(flags)))
-    //     {
-    //         perror("ERROR: setsocketopt(), SO_KEEPALIVE");
-    //         exit(0);
-    //     }
-    // }
-
     /* After parsing and hanlding bad requests, pass routine to service the actual file*/
     /* Pass in client request struct as arg*/
     int handle = service_request(client, &client_request);
