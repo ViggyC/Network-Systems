@@ -14,6 +14,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <dirent.h>
+#include <pthread.h> //for threading , link with lpthread
+
 #define BUFSIZE 8192
 #define TEMP_SIZE 1024
 
@@ -279,7 +281,6 @@ int service_request(int client, void *client_args)
         printf("%s DOES NOT EXIST!\n", relative_path);
         NotFound(client);
     }
-
     /* Pulled from PA1*/
     fseek(fp, 0, SEEK_END);
     fsize = ftell(fp);
@@ -287,22 +288,26 @@ int service_request(int client, void *client_args)
 
     /* GET CONTENT TYPE!!!!!!*/
     char *file_extention = strchr(relative_path, '.');
-    // printf("File extension: %s\n", file_extention);
+    printf("File extension: %s\n", file_extention);
     if (file_extention == NULL)
     {
         NotFound(client);
     }
-    getContentType(http_response.contentType, file_extention);
-    // printf("Reponse Content Type: %s\n", http_response.contentType);
 
+    getContentType(http_response.contentType, file_extention);
+
+    // printf("Reponse Content Type: %s\n", http_response.contentType);
     /* Generate actual payload to send with header status*/
     char payload[fsize];
+
     fread(payload, 1, fsize, fp);
 
     /*Generate response*/
     /* send HTTP response back to client: webpage */
     /* note the header must be very secific */
+
     char response_header[BUFSIZE];
+
     // if (strcmp(client_request->connection, "keep-alive") == 0)
     // {
 
@@ -314,6 +319,7 @@ int service_request(int client, void *client_args)
     // }
 
     /* use for non extra credit*/
+
     sprintf(response_header, "%s 200 OK\r\nContent-Type:%s\r\nContent-Length:%ld\r\n\r\n", http_response.version, http_response.contentType, fsize);
 
     printf("RESPONSE: \n");
@@ -325,17 +331,26 @@ int service_request(int client, void *client_args)
     memcpy(full_response + strlen(full_response), payload, fsize);
     /* AND we got it! */
     /* the child processes will all be sending to different {client} addresses, per parent accept() */
+
     send(client, full_response, sizeof(full_response), 0);
+    close(client);
     return 0;
 }
 
 /* different processes for different requests will be handling this routine */
 /* Process will stay in this routine if 200 OK */
-int parse_request(int client, char *buf)
+void *parse_request(void *socket_desc)
 {
     // printf("Parsing the HTTP request in this routine \n");
+    pthread_detach(pthread_self());
+    int n;
+    int sock = *(int *)socket_desc;
+    char buf[BUFSIZE];
+    memset(buf, 0, BUFSIZE);
+    n = recv(sock, buf, BUFSIZE, 0);
+
     buf[strlen(buf) - 1] = '\0';
-    // printf("Client Request:\n%s\n", buf);
+    printf("Client Request:\n%s\n", buf);
 
     /*Parse client request*/
     HTTP_REQUEST client_request;
@@ -360,7 +375,7 @@ int parse_request(int client, char *buf)
     {
         // bad request?
         printf("Bad request\n");
-        BadRequest(client);
+        BadRequest(sock);
     }
 
     /* Only required for HTTP1/1.1*/
@@ -371,7 +386,7 @@ int parse_request(int client, char *buf)
     if (strstr(client_request.URI, "..") != NULL)
     {
         // printf("Bad url: ..\n");
-        Forbidden(client);
+        Forbidden(sock);
     }
 
     /* null terminating for safety*/
@@ -381,7 +396,7 @@ int parse_request(int client, char *buf)
     if (strcmp(client_request.method, "GET") != 0)
     {
         printf("Method not allowed\n");
-        MethodNotAllowed(client);
+        MethodNotAllowed(sock);
     }
     // printf("HTTP version: %s\n", client_request.version);
     // printf("%d\n", strcmp(client_request.version, "HTTP/1.1"));
@@ -394,7 +409,7 @@ int parse_request(int client, char *buf)
     else
     {
         printf("Invalid HTTP version\n");
-        HTTPVersionNotSupported(client);
+        HTTPVersionNotSupported(sock);
     }
 
     /* Connection: keep-alive */
@@ -410,8 +425,8 @@ int parse_request(int client, char *buf)
 
     /* After parsing and hanlding bad requests, pass routine to service the actual file*/
     /* Pass in client request struct as arg*/
-    int handle = service_request(client, &client_request);
-    return 0;
+    int handle = service_request(sock, &client_request);
+    return NULL;
 }
 
 int main(int argc, char **argv)
@@ -427,6 +442,8 @@ int main(int argc, char **argv)
     int n;                         /* message byte size */
     int client_socket;             /* each process will have its own*/
     int child_socket;
+    int *new_sock;
+    signal(SIGINT, sigint_handler);
 
     if (argc != 2)
     {
@@ -474,63 +491,21 @@ int main(int argc, char **argv)
     }
 
     /* continously handle client requests */
-    while (1)
+    while ((client_socket = accept(sockfd, (struct sockaddr *)&clientaddr, &clientlen)) > 0)
     {
-        // accepting a connection means creating a client socket
-        /* this client_socket is how we send data back to the connected client */
-        bzero(&clientaddr, sizeof(clientaddr));
-        client_socket = accept(sockfd, (struct sockaddr *)&clientaddr, &clientlen);
-        /* Parent basically updates the client socket address for every iteration, with a new socket for that client*/
-        // printf("Accept returned: %d\n", client_socket);
-        if (client_socket < 0)
-        {
-            break;
-        }
-        char buf[BUFSIZE];
-        memset(buf, 0, BUFSIZE);
+
         /* Write logic for multiple connections - fork() or threads */
         /*TODO: graceful exit*/
-        signal(SIGINT, sigint_handler);
         /* Parent spawns child processes to handle incoming requests*/
-        pid_t client_connection = fork();
+        pthread_t sniffer_thread;
 
-        /*Child Code*/
-        if (client_connection == 0)
+        new_sock = malloc(1);
+        *new_sock = client_socket;
+        if (pthread_create(&sniffer_thread, NULL, parse_request, (void *)new_sock) < 0)
         {
-            // child - closes the LISTENING socket, this sockfd doesnt matter to the child, only the parent listening for incoming requests
-            close(sockfd);
-            printf("child process\n");
-            /* The same client can have as many sequential requests as it wants*/
-            /* Meanwhile, parent will be executing more fork calls*/
-            /* The fork() was for different clients that may also have sequestial requests*/
-            /* The child processes all have their own client addresses*/
-            /* !!! Huge question: how do we only need one accept() - how can one accept() support multiple clients that have multiple requests? */
-            /* this while loop will work for connection keep-alive*/
-            // while (1)
-            // {
-            // client can keep sending requests
-            n = recv(client_socket, buf, BUFSIZE, 0);
-            /* Parse request: GET /Protocols/rfc1945/rfc1945 HTTP/1.1 */
-            if (n < 0)
-            {
-                printf("timout\n");
-                close(client_socket);
-                exit(1);
-                // error("ERROR receiving from client");
-            }
-
-            int handle_result = parse_request(client_socket, buf);
-            // printf("Client request serviced...\n");
-            memset(buf, 0, BUFSIZE);
-            close(client_socket);
-            exit(0);
-            /* After parsing need to send response, this is handled in parse_request() as well*/
-            /* meanwhile parent is creating more forks() for incoming requests*/
-            //}
+            perror("could not create thread");
+            return 1;
         }
-        /* Parent needs to close client socket*/
-        close(client_socket);
-        /*Parent goes back up to the loop to handle more clients, child may be running multiple requests*/
     }
     /*Accept returns -1 when signal handler closes the socket, so we sleep and let the children finish*/
     printf("sleeping...\n");
