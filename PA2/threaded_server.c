@@ -84,6 +84,7 @@ void sigint_handler(int sig)
     // child processes may continue to finish servicing a request
     printf("Ctrl+C detected\n");
     close(sockfd);
+    exit(0);
 }
 
 int getContentType(char *contentType, char *fileExtension)
