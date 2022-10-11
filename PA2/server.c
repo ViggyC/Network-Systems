@@ -356,7 +356,7 @@ int parse_request(int client, char *buf)
 
     /*This sleep is a debugging method to see the children during the graceful exit*/
     // sleep(5);
-    //   printf("Children slept for 5 ms\n");
+    // printf("Children slept for 5 ms\n");
 
     /* check this logic, sometimes recv() get an empty buffer*/
     if (client_request.method == NULL || client_request.URI == NULL || client_request.version == NULL)
@@ -483,6 +483,14 @@ int main(int argc, char **argv)
         // accepting a connection means creating a client socket
         /* this client_socket is how we send data back to the connected client */
         bzero(&clientaddr, sizeof(clientaddr));
+        /*
+            accept(): extracts the first
+            connection request on the queue of pending connections for the
+            listening socket, sockfd, creates a new connected socket, and
+            returns a new file descriptor referring to that socket.  The
+            newly created socket is not in the listening state.  The original
+            socket sockfd is unaffected by this call.
+        */
         client_socket = accept(sockfd, (struct sockaddr *)&clientaddr, &clientlen);
         /* Parent basically updates the client socket address for every iteration, with a new socket for that client*/
         // printf("Accept returned: %d\n", client_socket);
@@ -538,17 +546,11 @@ int main(int argc, char **argv)
     }
     /*Accept returns -1 when signal handler closes the socket, so we sleep and let the children finish*/
     printf("sleeping...\n");
+    /*10 second wait for children to finish before parent exits: CJ/mason office hours*/
     sleep(10);
     printf("Children Done\n");
     // close(sockfd);
     exit(0);
 }
 
-/* When do we close the client for keep-alive?*/
-//    Man Page - accept():
-//    It extracts the first
-//    connection request on the queue of pending connections for the
-//    listening socket, sockfd, creates a new connected socket, and
-//    returns a new file descriptor referring to that socket.  The
-//    newly created socket is not in the listening state.  The original
-//    socket sockfd is unaffected by this call.
+/* ---PA 2--- */
