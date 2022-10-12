@@ -548,7 +548,7 @@ int main(int argc, char **argv)
                 }
 
                 int handle_result = parse_request(client_socket, buf);
-                // printf("Client request serviced...\n");
+                // printf("Client %d request serviced...\n", client_socket);
                 memset(buf, 0, BUFSIZE);
 
                 /* Dont close socket until receive connection close or timeout of 10s*/
