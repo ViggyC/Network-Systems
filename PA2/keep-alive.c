@@ -79,8 +79,14 @@ void sigint_handler(int sig)
 {
     /* close main listening socket - sockfd*/
     // child processes may continue to finish servicing a request
-    printf("Ctrl+C detected\n");
     close(sockfd);
+    // pid_t child_pid;
+    // while ((child_pid = wait(NULL)) > 0)
+    //     ;
+    // // {
+    //     printf("Parent: %d\n", getpid());
+    //     printf("CHild: %d\n", child_pid);
+    // }
 }
 
 int getContentType(char *contentType, char *fileExtension)
@@ -361,7 +367,7 @@ int parse_request(int client, char *buf)
 
     /*This sleep is a debugging method to see the children during the graceful exit*/
     // sleep(5);
-    // printf("Children slept for 5 ms\n");
+    //  printf("Children slept for 5 ms\n");
 
     /* check this logic, sometimes recv() get an empty buffer*/
     if (client_request.method == NULL || client_request.URI == NULL || client_request.version == NULL)
@@ -535,7 +541,7 @@ int main(int argc, char **argv)
                 perror("Error in socket timeout setting: ");
             }
 
-            while (n = recv(client_socket, buf, BUFSIZE, 0) > 0)
+            while ((n = recv(client_socket, buf, BUFSIZE, 0)) > 0)
             {
                 // client can keep sending requests
                 int handle_result = parse_request(client_socket, buf);
@@ -558,12 +564,16 @@ int main(int argc, char **argv)
         /*Parent goes back up to the loop to handle more clients, child may be running multiple requests*/
     }
     /*Accept returns -1 when signal handler closes the socket, so we sleep and let the children finish*/
-    printf("sleeping...\n");
-    /*10 second wait for children to finish before parent exits: CJ/mason office hours*/
-    sleep(10);
-    printf("Children Done\n");
+    // printf("sleeping...\n");
+    // /*10 second wait for children to finish before parent exits: CJ/mason office hours*/
+    // sleep(10);
+    printf("Gracefully exiting...\n");
+    /*waiting for child processes to finish*/
+    while ((wait(NULL)) > 0)
+        ;
+    printf("Done\n");
     // close(sockfd);
-    exit(0);
+    return 0;
 }
 
 /* ---PA 2--- */
