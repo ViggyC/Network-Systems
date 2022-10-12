@@ -526,37 +526,32 @@ int main(int argc, char **argv)
             /* The child processes all have their own client addresses*/
             /* !!! Huge question: how do we only need one accept() - how can one accept() support multiple clients that have multiple requests? */
             /* this while loop will work for connection keep-alive*/
+            /* set timeout for child sockets - keep alive*/
+            struct timeval tv;
+            tv.tv_sec = 10;
+            tv.tv_usec = 0;
+            if (setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
+            {
+                perror("Error in socket timeout setting: ");
+            }
 
-            while (1)
+            while (n = recv(client_socket, buf, BUFSIZE, 0) > 0)
             {
                 // client can keep sending requests
-                n = recv(client_socket, buf, BUFSIZE, 0);
-                /* set timeout for child sockets - keep alive*/
-                struct timeval tv;
-                tv.tv_sec = 10;
-                tv.tv_usec = 0;
-                if (setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
-                {
-                    perror("Error");
-                }
-
-                if (n < 0)
-                {
-                    close(client_socket);
-                    exit(1);
-                    // error("ERROR receiving from client");
-                }
-
                 int handle_result = parse_request(client_socket, buf);
-                // printf("Client %d request serviced...\n", client_socket);
+                // printf("Client request serviced...\n");
                 memset(buf, 0, BUFSIZE);
-
                 /* Dont close socket until receive connection close or timeout of 10s*/
                 // close(client_socket);
                 // exit(0);
                 /* After parsing need to send response, this is handled in parse_request() as well*/
                 /* meanwhile parent is creating more forks() for incoming requests*/
             }
+
+            /*10 seconds have passed so we timeout*/
+            // printf("client timout\n");
+            close(client_socket);
+            exit(1);
         }
         /* Parent needs to close client socket*/
         close(client_socket);
