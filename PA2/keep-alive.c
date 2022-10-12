@@ -270,7 +270,7 @@ int service_request(int client, void *client_args)
             // printf("Relative path: %s\n", relative_path);
         }
     }
-    printf("Relative path: %s\n", relative_path);
+    // printf("Relative path: %s\n", relative_path);
     fp = fopen(relative_path, "rb");
     if (fp == NULL)
     {
@@ -301,16 +301,9 @@ int service_request(int client, void *client_args)
     /* send HTTP response back to client: webpage */
     /* note the header must be very secific */
     char response_header[BUFSIZE];
-    if (strcmp(client_request->connection, "keep-alive") == 0)
+    if (strcmp(client_request->connection, "keep-alive") == 0 || strcmp(client_request->connection, "Keep-alive") == 0)
     {
-        struct timeval tv;
-        tv.tv_sec = 10;
-        tv.tv_usec = 0;
-        if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
-        {
-            perror("Error");
-        }
-
+        // printf("keep alive!\n");
         sprintf(response_header, "%s 200 OK\r\nContent-Type: %s\r\nContent-Length: %ld\r\nConnection: %s\r\n\r\n", http_response.version, http_response.contentType, fsize, http_response.connection);
     }
     else
@@ -321,7 +314,7 @@ int service_request(int client, void *client_args)
     /* use for non extra credit*/
     // sprintf(response_header, "%s 200 OK\r\nContent-Type:%s\r\nContent-Length:%ld\r\n\r\n", http_response.version, http_response.contentType, fsize);
 
-    printf("RESPONSE: \n");
+    // printf("RESPONSE: \n");
     printf("%s\n", response_header);
     /* Now attach the payload*/
     char full_response[fsize + strlen(response_header)];
@@ -331,11 +324,6 @@ int service_request(int client, void *client_args)
     /* AND we got it! */
     /* the child processes will all be sending to different {client} addresses, per parent accept() */
     send(client, full_response, sizeof(full_response), 0);
-
-    if (strcmp(http_response.connection, "close") == 0)
-    {
-        close(client);
-    }
     return 0;
 }
 
@@ -350,20 +338,33 @@ int parse_request(int client, char *buf)
     /*Parse client request*/
     HTTP_REQUEST client_request;
     char temp_buf[BUFSIZE];
+    char conn_buf[BUFSIZE];
+    char host_buf[BUFSIZE];
+
     strcpy(temp_buf, buf);
+    strcpy(conn_buf, buf);
     client_request.method = strtok(temp_buf, " "); // GET
     client_request.URI = strtok(NULL, " ");        // route/URI - relative path
-    client_request.version = strtok(NULL, "\r");   // version, end in \r
-    strtok(NULL, " ");
-    client_request.host = strtok(NULL, "\r");
-    strtok(NULL, " ");
-    client_request.connection = strtok(NULL, "\r");
+    client_request.version = strtok(NULL, "\r\n"); // version, end in \r
 
+    char *host = strstr(host_buf, "Host: ");
+    strtok(host, " ");
+    client_request.host = strtok(NULL, "\r\n");
+
+    char *connection_type = strstr(conn_buf, "Connection: ");
+    strtok(connection_type, " ");
+    client_request.connection = strtok(NULL, "\r\n");
+
+    /*************************REQUEST INFO********************************/
     printf("REQUEST method: %s\n", client_request.method);
     printf("REQUEST page: %s\n", client_request.URI);
     printf("REQUEST version: %s\n", client_request.version);
     printf("REQUEST host: %s\n", client_request.host);
-    printf("REQUEST connection: %s\n", client_request.connection);
+    printf("REQUEST connection: %s\n\n", client_request.connection);
+
+    /*This sleep is a debugging method to see the children during the graceful exit*/
+    // sleep(5);
+    // printf("Children slept for 5 ms\n");
 
     /* check this logic, sometimes recv() get an empty buffer*/
     if (client_request.method == NULL || client_request.URI == NULL || client_request.version == NULL)
@@ -372,6 +373,11 @@ int parse_request(int client, char *buf)
         printf("Bad request\n");
         BadRequest(client);
     }
+
+    /* Only required for HTTP1/1.1*/
+    // if( (client_request.host == NULL || client_request.connection == NULL) {
+
+    // }
 
     if (strstr(client_request.URI, "..") != NULL)
     {
@@ -388,6 +394,9 @@ int parse_request(int client, char *buf)
         printf("Method not allowed\n");
         MethodNotAllowed(client);
     }
+    // printf("HTTP version: %s\n", client_request.version);
+    // printf("%d\n", strcmp(client_request.version, "HTTP/1.1"));
+    // printf("Browser version: %d\n", strcmp(client_request.version, "HTTP/1.1"));
 
     if (strcmp(client_request.version, "HTTP/1.1") == 0 || strcmp(client_request.version, "HTTP/1.0") == 0)
     {
@@ -399,10 +408,22 @@ int parse_request(int client, char *buf)
         HTTPVersionNotSupported(client);
     }
 
-    /* Only required for HTTP1/1.1*/
-    // if( (client_request.host == NULL || client_request.connection == NULL) {
+    /*Keep alive checks: HTTP version!*/
+    if (strcmp(client_request.version, "HTTP/1.1") == 0 && client_request.connection == NULL)
+    {
+        // printf("Test!!\n");
+        client_request.connection = "keep-alive";
+        printf("REQUEST connection: %s\n\n", client_request.connection);
+    }
 
-    // }
+    if (strcmp(client_request.version, "HTTP/1.0") == 0 && client_request.connection == NULL)
+    {
+        // printf("Test!!\n");
+        client_request.connection = "close";
+        printf("REQUEST connection: %s\n\n", client_request.connection);
+    }
+
+    /* how to test timeout with keep alive?*/
 
     /* After parsing and hanlding bad requests, pass routine to service the actual file*/
     /* Pass in client request struct as arg*/
@@ -423,6 +444,7 @@ int main(int argc, char **argv)
     int n;                         /* message byte size */
     int client_socket;             /* each process will have its own*/
     int child_socket;
+    signal(SIGINT, sigint_handler);
 
     if (argc != 2)
     {
@@ -448,7 +470,6 @@ int main(int argc, char **argv)
     serveraddr.sin_family = AF_INET;
     serveraddr.sin_port = htons((unsigned short)portno);
     serveraddr.sin_addr.s_addr = htonl(INADDR_ANY); // resolved to any IP address on machine
-
     clientlen = sizeof(struct sockaddr);
 
     // bind socket to specifed IP and port, using same port
@@ -470,12 +491,20 @@ int main(int argc, char **argv)
     }
 
     /* continously handle client requests */
-    while (1)
+    while ((client_socket = accept(sockfd, (struct sockaddr *)&clientaddr, &clientlen)) > 0)
     {
         // accepting a connection means creating a client socket
         /* this client_socket is how we send data back to the connected client */
         bzero(&clientaddr, sizeof(clientaddr));
-        client_socket = accept(sockfd, (struct sockaddr *)&clientaddr, &clientlen);
+        /*
+            accept(): extracts the first
+            connection request on the queue of pending connections for the
+            listening socket, sockfd, creates a new connected socket, and
+            returns a new file descriptor referring to that socket.  The
+            newly created socket is not in the listening state.  The original
+            socket sockfd is unaffected by this call.
+        */
+
         /* Parent basically updates the client socket address for every iteration, with a new socket for that client*/
         // printf("Accept returned: %d\n", client_socket);
         if (client_socket < 0)
@@ -486,7 +515,6 @@ int main(int argc, char **argv)
         memset(buf, 0, BUFSIZE);
         /* Write logic for multiple connections - fork() or threads */
         /*TODO: graceful exit*/
-        signal(SIGINT, sigint_handler);
         /* Parent spawns child processes to handle incoming requests*/
         pid_t client_connection = fork();
 
@@ -495,13 +523,23 @@ int main(int argc, char **argv)
         {
             // child - closes the LISTENING socket, this sockfd doesnt matter to the child, only the parent listening for incoming requests
             close(sockfd);
-            printf("child process\n");
+            // printf("child process\n");
             /* The same client can have as many sequential requests as it wants*/
             /* Meanwhile, parent will be executing more fork calls*/
             /* The fork() was for different clients that may also have sequestial requests*/
             /* The child processes all have their own client addresses*/
             /* !!! Huge question: how do we only need one accept() - how can one accept() support multiple clients that have multiple requests? */
             /* this while loop will work for connection keep-alive*/
+
+            /* set timeout for child sockets - keep alive*/
+            struct timeval tv;
+            tv.tv_sec = 10;
+            tv.tv_usec = 0;
+            if (setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
+            {
+                perror("Error");
+            }
+
             while (1)
             {
                 // client can keep sending requests
@@ -509,7 +547,6 @@ int main(int argc, char **argv)
                 /* Parse request: GET /Protocols/rfc1945/rfc1945 HTTP/1.1 */
                 if (n < 0)
                 {
-                    printf("timout\n");
                     close(client_socket);
                     exit(1);
                     // error("ERROR receiving from client");
@@ -518,6 +555,8 @@ int main(int argc, char **argv)
                 int handle_result = parse_request(client_socket, buf);
                 // printf("Client request serviced...\n");
                 memset(buf, 0, BUFSIZE);
+
+                /* Dont close socket until receive connection close or timeout of 10s*/
                 // close(client_socket);
                 // exit(0);
                 /* After parsing need to send response, this is handled in parse_request() as well*/
@@ -530,17 +569,11 @@ int main(int argc, char **argv)
     }
     /*Accept returns -1 when signal handler closes the socket, so we sleep and let the children finish*/
     printf("sleeping...\n");
+    /*10 second wait for children to finish before parent exits: CJ/mason office hours*/
     sleep(10);
-    printf("Done\n");
+    printf("Children Done\n");
     // close(sockfd);
     exit(0);
 }
 
-/* When do we close the client for keep-alive?*/
-//    Man Page - accept():
-//    It extracts the first
-//    connection request on the queue of pending connections for the
-//    listening socket, sockfd, creates a new connected socket, and
-//    returns a new file descriptor referring to that socket.  The
-//    newly created socket is not in the listening state.  The original
-//    socket sockfd is unaffected by this call.
+/* ---PA 2--- */

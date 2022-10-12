@@ -270,7 +270,7 @@ int service_request(int client, void *client_args)
             // printf("Relative path: %s\n", relative_path);
         }
     }
-    printf("Relative path: %s\n", relative_path);
+    // printf("Relative path: %s\n", relative_path);
     fp = fopen(relative_path, "rb");
     if (fp == NULL)
     {
@@ -314,7 +314,7 @@ int service_request(int client, void *client_args)
     /* use for non extra credit*/
     sprintf(response_header, "%s 200 OK\r\nContent-Type:%s\r\nContent-Length:%ld\r\n\r\n", http_response.version, http_response.contentType, fsize);
 
-    printf("RESPONSE: \n");
+    // printf("RESPONSE: \n");
     printf("%s\n", response_header);
     /* Now attach the payload*/
     char full_response[fsize + strlen(response_header)];
@@ -324,7 +324,6 @@ int service_request(int client, void *client_args)
     /* AND we got it! */
     /* the child processes will all be sending to different {client} addresses, per parent accept() */
     send(client, full_response, sizeof(full_response), 0);
-    // sleep(3);
     return 0;
 }
 
@@ -334,24 +333,34 @@ int parse_request(int client, char *buf)
 {
     // printf("Parsing the HTTP request in this routine \n");
     buf[strlen(buf) - 1] = '\0';
-    // printf("Client Request:\n%s\n", buf);
+    printf("Client Request:\n%s\n", buf);
 
     /*Parse client request*/
     HTTP_REQUEST client_request;
     char temp_buf[BUFSIZE];
+    char conn_buf[BUFSIZE];
+    char host_buf[BUFSIZE];
+
     strcpy(temp_buf, buf);
+    strcpy(conn_buf, buf);
     client_request.method = strtok(temp_buf, " "); // GET
     client_request.URI = strtok(NULL, " ");        // route/URI - relative path
     client_request.version = strtok(NULL, "\r\n"); // version, end in \r
-    char *connection_type = strstr(buf, "Connection");
-    printf("connection type: %s\n", connection_type);
+
+    char *host = strstr(host_buf, "Host: ");
+    strtok(host, " ");
+    client_request.host = strtok(NULL, "\r\n");
+
+    char *connection_type = strstr(conn_buf, "Connection: ");
     strtok(connection_type, " ");
     client_request.connection = strtok(NULL, "\r\n");
 
+    /*************************REQUEST INFO********************************/
     printf("REQUEST method: %s\n", client_request.method);
     printf("REQUEST page: %s\n", client_request.URI);
     printf("REQUEST version: %s\n", client_request.version);
-    printf("REQUEST connection: %s\n", client_request.connection);
+    printf("REQUEST host: %s\n", client_request.host);
+    printf("REQUEST connection: %s\n\n", client_request.connection);
 
     /*This sleep is a debugging method to see the children during the graceful exit*/
     // sleep(5);
@@ -443,7 +452,6 @@ int main(int argc, char **argv)
     serveraddr.sin_family = AF_INET;
     serveraddr.sin_port = htons((unsigned short)portno);
     serveraddr.sin_addr.s_addr = htonl(INADDR_ANY); // resolved to any IP address on machine
-
     clientlen = sizeof(struct sockaddr);
 
     // bind socket to specifed IP and port, using same port
@@ -465,7 +473,7 @@ int main(int argc, char **argv)
     }
 
     /* continously handle client requests */
-    while (1)
+    while ((client_socket = accept(sockfd, (struct sockaddr *)&clientaddr, &clientlen)) > 0)
     {
         // accepting a connection means creating a client socket
         /* this client_socket is how we send data back to the connected client */
@@ -478,7 +486,7 @@ int main(int argc, char **argv)
             newly created socket is not in the listening state.  The original
             socket sockfd is unaffected by this call.
         */
-        client_socket = accept(sockfd, (struct sockaddr *)&clientaddr, &clientlen);
+
         /* Parent basically updates the client socket address for every iteration, with a new socket for that client*/
         // printf("Accept returned: %d\n", client_socket);
         if (client_socket < 0)
@@ -511,14 +519,12 @@ int main(int argc, char **argv)
             /* Parse request: GET /Protocols/rfc1945/rfc1945 HTTP/1.1 */
             if (n < 0)
             {
-                printf("timout\n");
                 close(client_socket);
                 exit(1);
                 // error("ERROR receiving from client");
             }
 
             int handle_result = parse_request(client_socket, buf);
-            // sleep(2);
             // printf("Client request serviced...\n");
             memset(buf, 0, BUFSIZE);
             close(client_socket);
