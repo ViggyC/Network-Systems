@@ -16,6 +16,7 @@
 #include <dirent.h>
 #define BUFSIZE 8192
 #define TEMP_SIZE 1024
+/*https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Connection*/
 
 /* GLOBAL listen socket descriptor*/
 int sockfd; /* server socket file descriptor*/
@@ -239,24 +240,31 @@ int service_request(int client, void *client_args)
     strcat(relative_path, "www");
     strcat(relative_path, client_request->URI);
 
-    if (strcmp(client_request->URI, "/") == 0)
+    if (strcmp(client_request->URI, "/index.html") == 0)
     {
-        strcat(relative_path, "index.html");
         fp = fopen(relative_path, "rb");
         if (fp == NULL)
         {
-
             bzero(relative_path, sizeof(relative_path)); // clear it!!!!!!!!!!
             strcat(relative_path, "www");
-            strcat(relative_path, client_request->URI);
-            strcat(relative_path, "index.htm");
-            printf("index.html does not exist\n");
-            printf("Relative path: %s\n", relative_path);
+            strcat(relative_path, "/index.htm");
         }
     }
-    else if (isDirectory(relative_path) != 0)
+
+    if (strcmp(client_request->URI, "/index.htm") == 0)
     {
-        printf("This is a directory\n");
+        fp = fopen(relative_path, "rb");
+        if (fp == NULL)
+        {
+            bzero(relative_path, sizeof(relative_path)); // clear it!!!!!!!!!!
+            strcat(relative_path, "www");
+            strcat(relative_path, "/index.html");
+        }
+    }
+
+    if (isDirectory(relative_path) != 0)
+    {
+        // printf("This is a directory\n");
         strcat(relative_path, "/index.html");
         fp = fopen(relative_path, "rb");
         if (fp == NULL)
@@ -266,15 +274,14 @@ int service_request(int client, void *client_args)
             strcat(relative_path, "www");
             strcat(relative_path, client_request->URI);
             strcat(relative_path, "/index.htm");
-            // printf("index.html does not exist\n");
-            // printf("Relative path: %s\n", relative_path);
         }
     }
-    // printf("Relative path: %s\n", relative_path);
+
+    // printf("Final Relative path: %s\n", relative_path);
     fp = fopen(relative_path, "rb");
     if (fp == NULL)
     {
-        printf("%s DOES NOT EXIST!\n", relative_path);
+        printf("%s does not exist!\n", relative_path);
         NotFound(client);
     }
 
@@ -324,6 +331,12 @@ int service_request(int client, void *client_args)
     /* AND we got it! */
     /* the child processes will all be sending to different {client} addresses, per parent accept() */
     send(client, full_response, sizeof(full_response), 0);
+
+    /* Do I need this or is connection close in the header enough?*/
+    if (strcmp(client_request->connection, "close") == 0)
+    {
+        close(client);
+    }
     return 0;
 }
 
@@ -413,14 +426,14 @@ int parse_request(int client, char *buf)
     {
         // printf("Test!!\n");
         client_request.connection = "keep-alive";
-        printf("REQUEST connection: %s\n\n", client_request.connection);
+        // printf("REQUEST connection: %s\n\n", client_request.connection);
     }
 
     if (strcmp(client_request.version, "HTTP/1.0") == 0 && client_request.connection == NULL)
     {
         // printf("Test!!\n");
         client_request.connection = "close";
-        printf("REQUEST connection: %s\n\n", client_request.connection);
+        // printf("REQUEST connection: %s\n\n", client_request.connection);
     }
 
     /* how to test timeout with keep alive?*/
