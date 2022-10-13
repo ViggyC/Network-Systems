@@ -9,6 +9,7 @@
 #include <netdb.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <netinet/in.h>
@@ -263,7 +264,7 @@ int service_request(int client, void *client_args)
             strcat(relative_path, "/index.htm");
         }
     }
-    printf("Relative path: %s\n", relative_path);
+    // printf("Relative path: %s\n", relative_path);
     fp = fopen(relative_path, "rb");
     if (fp == NULL)
     {
@@ -319,11 +320,13 @@ int service_request(int client, void *client_args)
     /* AND we got it! */
     /* the child processes will all be sending to different {client} addresses, per parent accept() */
     send(client, full_response, sizeof(full_response), 0);
+    // printf("Full response size : %lu\n", sizeof(full_response));
 
     /* Do I need this or is connection close in the header enough?*/
     if (strcmp(client_request->connection, "close") == 0)
     {
         close(client);
+        exit(0);
     }
     return 0;
 }
@@ -564,8 +567,11 @@ int main(int argc, char **argv)
             /*10 seconds have passed so we timeout*/
             char timeout[BUFSIZE];
             bzero(timeout, sizeof(timeout));
-            // printf("client timout\n");
+            // printf("client that closed: %d\n", client_socket);
             sprintf(timeout, "HTTP/1.1 408 Request Timeout\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+            /* This will only send in the case of a timout,
+            if the server closes the socket on behalf of the client,
+            then this will never send because the client already exited*/
             send(client_socket, timeout, sizeof(timeout), 0);
             printf("%s\n", timeout);
             close(client_socket);
