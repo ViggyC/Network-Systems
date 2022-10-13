@@ -249,7 +249,6 @@ int service_request(int client, void *client_args)
     /* hard code root directory www*/
     strcat(relative_path, "www");
     strcat(relative_path, client_request->URI);
-
     if (isDirectory(relative_path) != 0)
     {
         // printf("This is a directory\n");
@@ -264,8 +263,7 @@ int service_request(int client, void *client_args)
             strcat(relative_path, "/index.htm");
         }
     }
-
-    // printf("sending: %s\n", relative_path);
+    printf("Relative path: %s\n", relative_path);
     fp = fopen(relative_path, "rb");
     if (fp == NULL)
     {
@@ -305,7 +303,7 @@ int service_request(int client, void *client_args)
     }
     else
     {
-        sprintf(response_header, "%s 200 OK\r\nContent-Type:%s\r\nContent-Length:%ld\r\nConnection: %s\r\n\r\n", http_response.version, http_response.contentType, fsize, http_response.connection);
+        sprintf(response_header, "%s 200 OK\r\nContent-Type: %s\r\nContent-Length: %ld\r\nConnection: %s\r\n\r\n", http_response.version, http_response.contentType, fsize, http_response.connection);
     }
 
     /* use for non extra credit*/
@@ -544,6 +542,15 @@ int main(int argc, char **argv)
             while ((n = recv(client_socket, buf, BUFSIZE, 0)) > 0)
             {
                 // client can keep sending requests
+
+                /* reset timeout value*/
+                tv.tv_sec = 10;
+                tv.tv_usec = 0;
+                if (setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
+                {
+                    perror("Error in socket timeout setting: ");
+                }
+
                 int handle_result = parse_request(client_socket, buf);
                 // printf("Client request serviced...\n");
                 memset(buf, 0, BUFSIZE);
@@ -561,9 +568,8 @@ int main(int argc, char **argv)
             sprintf(timeout, "HTTP/1.1 408 Request Timeout\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
             send(client_socket, timeout, sizeof(timeout), 0);
             printf("%s\n", timeout);
-
             close(client_socket);
-            exit(1);
+            exit(0);
         }
         /* Parent needs to close client socket*/
         close(client_socket);
