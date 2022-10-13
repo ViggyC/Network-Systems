@@ -555,7 +555,13 @@ int main(int argc, char **argv)
             }
 
             /*10 seconds have passed so we timeout*/
+            char timeout[BUFSIZE];
+            bzero(timeout, sizeof(timeout));
             // printf("client timout\n");
+            sprintf(timeout, "HTTP/1.1 408 Request Timeout\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+            send(client_socket, timeout, sizeof(timeout), 0);
+            printf("%s\n", timeout);
+
             close(client_socket);
             exit(1);
         }
