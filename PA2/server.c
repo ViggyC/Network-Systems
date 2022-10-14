@@ -329,7 +329,7 @@ int service_request(int client, void *client_args)
     // printf("Full response size : %lu\n", sizeof(full_response));
 
     /* Do I need this or is connection close in the header enough?*/
-    if (strcmp(client_request->connection, "close") == 0)
+    if (strcmp(client_request->connection, "close") == 0 || strcmp(client_request->connection, "Close") == 0)
     {
         printf("Closing client connection....\n");
         close(client);
@@ -374,13 +374,15 @@ int parse_request(int client, char *buf)
     printf("REQUEST connection: %s\n\n", client_request.connection);
 
     /*This sleep is a debugging method to see the children during the graceful exit*/
-    // sleep(3);
+    // sleep(5);
     //   printf("Children slept for 5 ms\n");
 
     /* check this logic, sometimes recv() get an empty buffer*/
     if (client_request.method == NULL || client_request.URI == NULL || client_request.version == NULL)
     {
         // bad request?
+        client_request.version = "HTTP/1.0";
+        client_request.connection = "keep-alive";
         printf("Bad request\n");
         BadRequest(client, &client_request);
         return 0;
@@ -404,6 +406,7 @@ int parse_request(int client, char *buf)
     if (strstr(client_request.URI, "..") != NULL)
     {
         // printf("Bad url: ..\n");
+        client_request.connection = "keep-alive";
         Forbidden(client, &client_request);
         return 0;
     }
@@ -428,7 +431,8 @@ int parse_request(int client, char *buf)
     }
     else
     {
-        printf("Invalid HTTP version\n");
+        // printf("Invalid HTTP version\n");
+        client_request.connection = "keep-alive";
         HTTPVersionNotSupported(client, &client_request);
         return 0;
     }
