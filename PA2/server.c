@@ -27,6 +27,7 @@
 
 /* GLOBAL listen socket descriptor*/
 int sockfd; /* server socket file descriptor*/
+int check;
 
 /*https://www.stackpath.com/edge-academy/what-is-keep-alive/#:~:text=Overview,connection%20header%20can%20be%20used.*/
 
@@ -94,6 +95,7 @@ void sigint_handler(int sig)
     //     printf("Parent: %d\n", getpid());
     //     printf("CHild: %d\n", child_pid);
     // }
+    check = 0;
 }
 
 int getContentType(char *contentType, char *fileExtension)
@@ -302,6 +304,13 @@ int service_request(int client, void *client_args)
     /*Generate response*/
     /* send HTTP response back to client: webpage */
     /* note the header must be very secific */
+    if (check == 0)
+    {
+        // printf("This is the last request\n");
+        bzero(http_response.connection, sizeof(http_response.connection));
+        strcpy(http_response.connection, "close");
+    }
+
     char response_header[BUFSIZE];
     if (strcmp(client_request->connection, "keep-alive") == 0 || strcmp(client_request->connection, "Keep-alive") == 0)
     {
@@ -310,6 +319,7 @@ int service_request(int client, void *client_args)
     }
     else
     {
+        printf("sending last request: %s\n", http_response.connection);
         sprintf(response_header, "%s 200 OK\r\nContent-Type: %s\r\nContent-Length: %ld\r\nConnection: %s\r\n\r\n", http_response.version, http_response.contentType, fsize, http_response.connection);
     }
 
@@ -329,11 +339,12 @@ int service_request(int client, void *client_args)
     // printf("Full response size : %lu\n", sizeof(full_response));
 
     /* Do I need this or is connection close in the header enough?*/
-    if (strcmp(client_request->connection, "close") == 0 || strcmp(client_request->connection, "Close") == 0)
+    if ((strcmp(http_response.connection, "close") == 0) || (strcmp(http_response.connection, "Close") == 0))
     {
-        printf("Closing client connection....\n");
+        // printf("Closing client connection....\n");
         close(client);
         exit(0);
+        printf("Test exit\n");
     }
     return 0;
 }
@@ -367,15 +378,15 @@ int parse_request(int client, char *buf)
     client_request.connection = strtok(NULL, "\r\n");
 
     /*************************REQUEST INFO********************************/
-    printf("REQUEST method: %s\n", client_request.method);
-    printf("REQUEST page: %s\n", client_request.URI);
-    printf("REQUEST version: %s\n", client_request.version);
-    printf("REQUEST host: %s\n", client_request.host);
-    printf("REQUEST connection: %s\n\n", client_request.connection);
+    // printf("REQUEST method: %s\n", client_request.method);
+    // printf("REQUEST page: %s\n", client_request.URI);
+    // printf("REQUEST version: %s\n", client_request.version);
+    // printf("REQUEST host: %s\n", client_request.host);
+    // printf("REQUEST connection: %s\n\n", client_request.connection);
 
     /*This sleep is a debugging method to see the children during the graceful exit*/
-    // sleep(5);
-    //   printf("Children slept for 5 ms\n");
+    // sleep(3);
+    //     printf("Children slept for 5 ms\n");
 
     /* check this logic, sometimes recv() get an empty buffer*/
     if (client_request.method == NULL || client_request.URI == NULL || client_request.version == NULL)
@@ -460,6 +471,7 @@ int main(int argc, char **argv)
     int client_socket;             /* each process will have its own*/
     int child_socket;
     signal(SIGINT, sigint_handler);
+    check = 1;
 
     if (argc != 2)
     {
