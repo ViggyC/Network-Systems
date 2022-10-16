@@ -87,6 +87,7 @@ void sigint_handler(int sig)
 {
     /* close main listening socket - sockfd*/
     // child processes may continue to finish servicing a request
+    // printf("sig: %d\n", sig);
     close(sockfd);
     // pid_t child_pid;
     // while ((child_pid = wait(NULL)) > 0)
@@ -221,7 +222,7 @@ int HTTPVersionNotSupported(int client, void *client_args)
     char response[BUFSIZE];
     bzero(response, sizeof(response));
     HTTP_REQUEST *client_request = (HTTP_REQUEST *)client_args;
-    sprintf(response, "%s 505 HTTP Version Not Supported\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: %s\r\n\r\n", client_request->version, client_request->connection);
+    sprintf(response, "HTTP/1.0 505 HTTP Version Not Supported\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: %s\r\n\r\n", client_request->connection);
     printf("%s\n", response);
     send(client, response, sizeof(response), 0);
     if (strcmp(client_request->connection, "close") == 0)
@@ -386,7 +387,7 @@ int parse_request(int client, char *buf)
 
     /*This sleep is a debugging method to see the children during the graceful exit*/
     // sleep(3);
-    //     printf("Children slept for 5 ms\n");
+    //      printf("Children slept for 5 ms\n");
 
     /* check this logic, sometimes recv() get an empty buffer*/
     if (client_request.method == NULL || client_request.URI == NULL || client_request.version == NULL)
