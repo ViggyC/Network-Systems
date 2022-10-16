@@ -27,7 +27,7 @@
 
 /* GLOBAL listen socket descriptor*/
 int sockfd; /* server socket file descriptor*/
-int check;
+int check;  /*global flag for children to terminate on graceful exit*/
 
 /*https://www.stackpath.com/edge-academy/what-is-keep-alive/#:~:text=Overview,connection%20header%20can%20be%20used.*/
 
@@ -319,7 +319,7 @@ int service_request(int client, void *client_args)
     }
     else
     {
-        printf("sending last request: %s\n", http_response.connection);
+        // printf("sending last request: %s\n", http_response.connection);
         sprintf(response_header, "%s 200 OK\r\nContent-Type: %s\r\nContent-Length: %ld\r\nConnection: %s\r\n\r\n", http_response.version, http_response.contentType, fsize, http_response.connection);
     }
 
@@ -394,7 +394,7 @@ int parse_request(int client, char *buf)
         // bad request?
         client_request.version = "HTTP/1.0";
         client_request.connection = "keep-alive";
-        printf("Bad request\n");
+        // printf("Bad request\n");
         BadRequest(client, &client_request);
         return 0;
     }
@@ -428,7 +428,7 @@ int parse_request(int client, char *buf)
 
     if (strcmp(client_request.method, "GET") != 0)
     {
-        printf("Method not allowed\n");
+        // printf("Method not allowed\n");
         MethodNotAllowed(client, &client_request);
         return 0;
     }
@@ -611,8 +611,12 @@ int main(int argc, char **argv)
     // sleep(10);
     printf("Gracefully exiting...\n");
     /*waiting for child processes to finish*/
-    while ((wait(NULL)) > 0)
-        ;
+    pid_t child_p;
+    while ((child_p = wait(NULL)) > 0)
+    {
+        // printf("waiting on: %d\n", child_p);
+    }
+
     printf("Done\n");
     // close(sockfd);
     return 0;
