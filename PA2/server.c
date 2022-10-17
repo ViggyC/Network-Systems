@@ -449,7 +449,6 @@ int parse_request(int client, char *buf)
     else
     {
         // printf("Invalid HTTP version\n");
-        client_request.connection = "keep-alive";
         HTTPVersionNotSupported(client, &client_request);
         return 0;
     }
