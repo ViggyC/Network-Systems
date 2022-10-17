@@ -161,10 +161,9 @@ int NotFound(int client, void *client_args)
     sprintf(Not_Found, "%s 404 Not Found\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: %s\r\n\r\n", client_request->version, client_request->connection);
     printf("%s\n", Not_Found);
     send(client, Not_Found, sizeof(Not_Found), 0);
-    if (strcmp(client_request->connection, "close") == 0 || strcmp(client_request->connection, "Close") == 0)
+    if (strcmp(client_request->connection, "close") == 0)
     {
         close(client);
-        exit(0);
     }
     return 0;
 }
@@ -179,10 +178,9 @@ int BadRequest(int client, void *client_args)
     sprintf(BAD_REQUEST, "HTTP/1.0 400 Bad Request\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: %s\r\n\r\n", client_request->connection);
     printf("%s\n", BAD_REQUEST);
     send(client, BAD_REQUEST, sizeof(BAD_REQUEST), 0);
-    if (strcmp(client_request->connection, "close") == 0 || strcmp(client_request->connection, "Close") == 0)
+    if (strcmp(client_request->connection, "close") == 0)
     {
         close(client);
-        exit(0);
     }
     return 0;
 }
@@ -196,10 +194,9 @@ int MethodNotAllowed(int client, void *client_args)
     sprintf(response, "%s 405 Method Not Allowed\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: %s\r\n\r\n", client_request->version, client_request->connection);
     printf("%s\n", response);
     send(client, response, sizeof(response), 0);
-    if (strcmp(client_request->connection, "close") == 0 || strcmp(client_request->connection, "Close") == 0)
+    if (strcmp(client_request->connection, "close") == 0)
     {
         close(client);
-        exit(0);
     }
     return 0;
 }
@@ -213,10 +210,9 @@ int Forbidden(int client, void *client_args)
     sprintf(response, "%s 403 Forbidden\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: %s\r\n\r\n", client_request->version, client_request->connection);
     printf("%s\n", response);
     send(client, response, sizeof(response), 0);
-    if (strcmp(client_request->connection, "close") == 0 || strcmp(client_request->connection, "Close") == 0)
+    if (strcmp(client_request->connection, "close") == 0)
     {
         close(client);
-        exit(0);
     }
     return 0;
 }
@@ -229,10 +225,9 @@ int HTTPVersionNotSupported(int client, void *client_args)
     sprintf(response, "HTTP/1.0 505 HTTP Version Not Supported\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: %s\r\n\r\n", client_request->connection);
     printf("%s\n", response);
     send(client, response, sizeof(response), 0);
-    if (strcmp(client_request->connection, "close") == 0 || strcmp(client_request->connection, "Close") == 0)
+    if (strcmp(client_request->connection, "close") == 0)
     {
         close(client);
-        exit(0);
     }
     return 0;
 }
