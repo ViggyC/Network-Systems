@@ -387,7 +387,7 @@ int parse_request(int client, char *buf)
 
     /*This sleep is a debugging method to see the children during the graceful exit*/
     // sleep(3);
-    //       printf("Children slept for 5 ms\n");
+    //      printf("Children slept for 5 ms\n");
 
     /* check this logic, sometimes recv() get an empty buffer*/
     if (client_request.method == NULL || client_request.URI == NULL || client_request.version == NULL)
@@ -587,13 +587,6 @@ int main(int argc, char **argv)
                 // exit(0);
                 /* After parsing need to send response, this is handled in parse_request() as well*/
                 /* meanwhile parent is creating more forks() for incoming requests*/
-            }
-
-            /* If SIGINT is hit but we didnt timeout we should just close and exit*/
-            if (check == 0)
-            {
-                close(client_socket);
-                exit(0);
             }
 
             /*10 seconds have passed so we timeout*/
