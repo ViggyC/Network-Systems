@@ -139,6 +139,88 @@ int getContentType(char *contentType, char *fileExtension)
 
     return 0;
 }
+/********************************** Invalid Requests****************************************/
+int NotFound(int client, void *client_args)
+{
+    /* what should this response actually look like*/
+    HTTP_REQUEST *client_request = (HTTP_REQUEST *)client_args;
+    // printf("Not found connection: %s\n", client_request->connection);
+    char Not_Found[BUFSIZE];
+    bzero(Not_Found, sizeof(Not_Found));
+    /* review this method of sending to the client*/
+    sprintf(Not_Found, "%s 404 Not Found\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: %s\r\n\r\n", client_request->version, client_request->connection);
+    printf("%s\n", Not_Found);
+    send(client, Not_Found, sizeof(Not_Found), 0);
+    if (strcmp(client_request->connection, "close") == 0)
+    {
+        close(client);
+    }
+    return 0;
+}
+
+int BadRequest(int client, void *client_args)
+{
+    char BAD_REQUEST[BUFSIZE];
+    bzero(BAD_REQUEST, sizeof(BAD_REQUEST));
+    HTTP_REQUEST *client_request = (HTTP_REQUEST *)client_args;
+    // snprintf(response);
+    /* review this method of sending to the client*/
+    sprintf(BAD_REQUEST, "HTTP/1.0 400 Bad Request\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: %s\r\n\r\n", client_request->connection);
+    printf("%s\n", BAD_REQUEST);
+    send(client, BAD_REQUEST, sizeof(BAD_REQUEST), 0);
+    if (strcmp(client_request->connection, "close") == 0)
+    {
+        close(client);
+    }
+    return 0;
+}
+
+int MethodNotAllowed(int client, void *client_args)
+{
+    /* what headers should I include*/
+    char response[BUFSIZE];
+    bzero(response, sizeof(response));
+    HTTP_REQUEST *client_request = (HTTP_REQUEST *)client_args;
+    sprintf(response, "%s 405 Method Not Allowed\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: %s\r\n\r\n", client_request->version, client_request->connection);
+    printf("%s\n", response);
+    send(client, response, sizeof(response), 0);
+    if (strcmp(client_request->connection, "close") == 0)
+    {
+        close(client);
+    }
+    return 0;
+}
+
+int Forbidden(int client, void *client_args)
+{
+    /* what headers should I include*/
+    char response[BUFSIZE];
+    bzero(response, sizeof(response));
+    HTTP_REQUEST *client_request = (HTTP_REQUEST *)client_args;
+    sprintf(response, "%s 403 Forbidden\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: %s\r\n\r\n", client_request->version, client_request->connection);
+    printf("%s\n", response);
+    send(client, response, sizeof(response), 0);
+    if (strcmp(client_request->connection, "close") == 0)
+    {
+        close(client);
+    }
+    return 0;
+}
+
+int HTTPVersionNotSupported(int client, void *client_args)
+{
+    char response[BUFSIZE];
+    bzero(response, sizeof(response));
+    HTTP_REQUEST *client_request = (HTTP_REQUEST *)client_args;
+    sprintf(response, "HTTP/1.0 505 HTTP Version Not Supported\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: %s\r\n\r\n", client_request->connection);
+    printf("%s\n", response);
+    send(client, response, sizeof(response), 0);
+    if (strcmp(client_request->connection, "close") == 0)
+    {
+        close(client);
+    }
+    return 0;
+}
 
 int isDirectory(const char *path)
 {
@@ -176,7 +258,6 @@ int service_request(int client, void *client_args)
     strcat(relative_path, client_request->URI);
     if (isDirectory(relative_path) != 0)
     {
-        // printf("This is a directory\n");
         strcat(relative_path, "/index.html");
         fp = fopen(relative_path, "rb");
         if (fp == NULL)
@@ -188,13 +269,10 @@ int service_request(int client, void *client_args)
             strcat(relative_path, "/index.htm");
         }
     }
-    // printf("Relative path: %s\n", relative_path);
+    printf("Relative path: %s\n", relative_path);
     fp = fopen(relative_path, "rb");
     if (fp == NULL)
     {
-        // printf("%s does not exist!\n", relative_path);
-        NotFound(client, client_request);
-        return 0;
     }
 
     /* Pulled from PA1*/
@@ -204,12 +282,7 @@ int service_request(int client, void *client_args)
 
     /* GET CONTENT TYPE!!!!!!*/
     char *file_extention = strchr(relative_path, '.');
-    // printf("File extension: %s\n", file_extention);
-    if (file_extention == NULL)
-    {
-        NotFound(client, client_request);
-        return 0;
-    }
+
     getContentType(http_response.contentType, file_extention);
     // printf("Reponse Content Type: %s\n", http_response.contentType);
 
@@ -228,19 +301,19 @@ int service_request(int client, void *client_args)
     }
 
     char response_header[BUFSIZE];
-    if (strcmp(client_request->connection, "keep-alive") == 0 || strcmp(client_request->connection, "Keep-alive") == 0)
-    {
-        // printf("keep alive!\n");
-        sprintf(response_header, "%s 200 OK\r\nContent-Type: %s\r\nContent-Length: %ld\r\nConnection: %s\r\n\r\n", http_response.version, http_response.contentType, fsize, http_response.connection);
-    }
-    else
-    {
-        // printf("sending last request: %s\n", http_response.connection);
-        sprintf(response_header, "%s 200 OK\r\nContent-Type: %s\r\nContent-Length: %ld\r\nConnection: %s\r\n\r\n", http_response.version, http_response.contentType, fsize, http_response.connection);
-    }
+    // if (strcmp(client_request->connection, "keep-alive") == 0 || strcmp(client_request->connection, "Keep-alive") == 0)
+    // {
+    //     // printf("keep alive!\n");
+    //     sprintf(response_header, "%s 200 OK\r\nContent-Type: %s\r\nContent-Length: %ld\r\nConnection: %s\r\n\r\n", http_response.version, http_response.contentType, fsize, http_response.connection);
+    // }
+    // else
+    // {
+    //     // printf("sending last request: %s\n", http_response.connection);
+    //     sprintf(response_header, "%s 200 OK\r\nContent-Type: %s\r\nContent-Length: %ld\r\nConnection: %s\r\n\r\n", http_response.version, http_response.contentType, fsize, http_response.connection);
+    // }
 
-    /* use for non extra credit*/
-    // sprintf(response_header, "%s 200 OK\r\nContent-Type:%s\r\nContent-Length:%ld\r\n\r\n", http_response.version, http_response.contentType, fsize);
+    /* use for non keep alive*/
+    sprintf(response_header, "%s 200 OK\r\nContent-Type:%s\r\nContent-Length:%ld\r\n\r\n", http_response.version, http_response.contentType, fsize);
 
     // printf("RESPONSE: \n");
     printf("%s\n", response_header);
@@ -304,6 +377,8 @@ int parse_request(int client, char *buf)
     client_request.URI = strtok(NULL, " ");        // route/URI - relative path
     client_request.version = strtok(NULL, "\r\n"); // version, end in \r
 
+    // You can do this right after a gethostbyname() call as this will return an IP address only for valid hostnames.
+
     char *host = strstr(host_buf, "Host: ");
     strtok(host, " ");
     client_request.host = strtok(NULL, "\r\n");
@@ -313,47 +388,28 @@ int parse_request(int client, char *buf)
     client_request.connection = strtok(NULL, "\r\n");
 
     /*************************REQUEST INFO********************************/
-    // printf("REQUEST method: %s\n", client_request.method);
-    // printf("REQUEST page: %s\n", client_request.URI);
-    // printf("REQUEST version: %s\n", client_request.version);
-    // printf("REQUEST host: %s\n", client_request.host);
-    // printf("REQUEST connection: %s\n\n", client_request.connection);
+    printf("REQUEST method: %s\n", client_request.method);
+    printf("REQUEST page: %s\n", client_request.URI);
+    printf("REQUEST version: %s\n", client_request.version);
+    printf("REQUEST host: %s\n", client_request.host);
+    printf("REQUEST connection: %s\n\n", client_request.connection);
+
+    /*Check if valid host, otherwise send bad request*/
+    struct hostent *server;
+    char *hostname;
+    server = gethostbyname(hostname);
 
     /*This sleep is a debugging method to see the children during the graceful exit*/
     // sleep(3);
-    //       printf("Children slept for 5 ms\n");
+    // printf("Children slept for 5 ms\n");
 
-    /* check this logic, sometimes recv() get an empty buffer*/
     if (client_request.method == NULL || client_request.URI == NULL || client_request.version == NULL)
     {
         // bad request?
         client_request.version = "HTTP/1.0";
         client_request.connection = "keep-alive";
-        // printf("Bad request\n");
         BadRequest(client, &client_request);
-        return 0;
-    }
 
-    /*Keep alive checks: HTTP version!*/
-    if (strcmp(client_request.version, "HTTP/1.1") == 0 && client_request.connection == NULL)
-    {
-        // printf("Test!!\n");
-        client_request.connection = "keep-alive";
-        // printf("REQUEST connection: %s\n\n", client_request.connection);
-    }
-
-    if (strcmp(client_request.version, "HTTP/1.0") == 0 && client_request.connection == NULL)
-    {
-        // printf("Test!!\n");
-        client_request.connection = "close";
-        // printf("REQUEST connection: %s\n\n", client_request.connection);
-    }
-
-    if (strstr(client_request.URI, "..") != NULL)
-    {
-        // printf("Bad url: ..\n");
-        client_request.connection = "keep-alive";
-        Forbidden(client, &client_request);
         return 0;
     }
 
@@ -363,27 +419,12 @@ int parse_request(int client, char *buf)
 
     if (strcmp(client_request.method, "GET") != 0)
     {
-        // printf("Method not allowed\n");
-        MethodNotAllowed(client, &client_request);
-        return 0;
-    }
-    // printf("HTTP version: %s\n", client_request.version);
-    // printf("%d\n", strcmp(client_request.version, "HTTP/1.1"));
-    // printf("Browser version: %d\n", strcmp(client_request.version, "HTTP/1.1"));
-
-    if (strcmp(client_request.version, "HTTP/1.1") == 0 || strcmp(client_request.version, "HTTP/1.0") == 0)
-    {
-        // do nothing
-    }
-    else
-    {
-        // printf("Invalid HTTP version\n");
-        client_request.connection = "keep-alive";
-        HTTPVersionNotSupported(client, &client_request);
+        /* Bad request according to writeup*/
+        BadRequest(client, &client_request);
         return 0;
     }
 
-    /* how to test timeout with keep alive?*/
+    /*Check cache here before pinging server*/
 
     /* After parsing and hanlding bad requests, pass routine to service the actual file*/
     /* Pass in client request struct as arg*/
