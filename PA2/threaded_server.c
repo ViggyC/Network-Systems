@@ -453,8 +453,6 @@ int main(int argc, char **argv)
     }
 
     portno = atoi(argv[1]);
-    char server_message[256] = "This is the webserver\n";
-
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
 
     /* setsockopt: Handy debugging trick that lets

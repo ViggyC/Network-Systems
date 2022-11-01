@@ -10,6 +10,8 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
+
 #include <signal.h>
 #include <netdb.h>
 #include <sys/types.h>
@@ -69,6 +71,7 @@ typedef struct
     char *file;
     char *portNo;
     char *messageBody;
+    char hash[BUFSIZE];
 } HTTP_REQUEST;
 
 /* This request goes from the proxy (this) to the http server*/
@@ -123,47 +126,6 @@ void sigint_handler(int sig)
     check = 0;
 }
 
-int getContentType(char *contentType, char *fileExtension)
-{
-
-    if (strcmp(fileExtension, ".html") == 0 || strcmp(fileExtension, ".htm") == 0)
-    {
-        strcpy(contentType, "text/html");
-    }
-    else if (strcmp(fileExtension, ".txt") == 0)
-    {
-        strcpy(contentType, "text/plain");
-    }
-    else if (strcmp(fileExtension, ".png") == 0)
-    {
-        strcpy(contentType, "img/png");
-    }
-    else if (strcmp(fileExtension, ".gif") == 0)
-    {
-        strcpy(contentType, "image/gif");
-    }
-    else if (strcmp(fileExtension, ".jpg") == 0)
-    {
-        strcpy(contentType, "image/jpg");
-    }
-
-    else if (strcmp(fileExtension, ".css") == 0)
-    {
-        strcpy(contentType, "text/css");
-    }
-
-    else if (strcmp(fileExtension, ".js") == 0)
-    {
-        strcpy(contentType, "application/javascript");
-    }
-
-    else if (strcmp(fileExtension, ".ico") == 0)
-    {
-        strcpy(contentType, "image/x-icon");
-    }
-
-    return 0;
-}
 /********************************** Invalid Requests****************************************/
 int NotFound(int client, void *client_args)
 {
@@ -255,129 +217,76 @@ int isDirectory(const char *path)
     return S_ISDIR(statbuf.st_mode);
 }
 
-/* Send Back to CLIENT*/
+/* Send Back to CLIENT - exactly what server sends back to us*/
 int service_request(int client, void *client_args)
 {
 
-    HTTP_REQUEST *client_request = (HTTP_REQUEST *)client_args;
-    HTTPResponseHeader http_response; /* to send back to client*/
-    FILE *fp;                         // file descriptor for page to send to client
-    ssize_t fsize;
-
-    /* Just get version right away, part of server response*/
-    strcpy(http_response.version, client_request->version);
-    // printf("HTTP version response: %s\n", http_response.version);
-
-    /* Some client may not send a connection type - dumb*/
-    if (client_request->connection != NULL)
-    {
-        strcpy(http_response.connection, client_request->connection);
-    }
-
-    /*open the URI*/
-    char relative_path[TEMP_SIZE];
-    bzero(relative_path, sizeof(relative_path)); // clear it!!!!!!!!!!
-
-    /* hard code root directory www*/
-    strcat(relative_path, "www");
-    strcat(relative_path, client_request->URI);
-    if (isDirectory(relative_path) != 0)
-    {
-        strcat(relative_path, "/index.html");
-        fp = fopen(relative_path, "rb");
-        if (fp == NULL)
-        {
-
-            bzero(relative_path, sizeof(relative_path)); // clear it!!!!!!!!!!
-            strcat(relative_path, "www");
-            strcat(relative_path, client_request->URI);
-            strcat(relative_path, "/index.htm");
-        }
-    }
-    printf("Relative path: %s\n", relative_path);
-    fp = fopen(relative_path, "rb");
-    if (fp == NULL)
-    {
-    }
-
-    /* Pulled from PA1*/
-    fseek(fp, 0, SEEK_END);
-    fsize = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
-
-    /* GET CONTENT TYPE!!!!!!*/
-    char *file_extention = strchr(relative_path, '.');
-
-    getContentType(http_response.contentType, file_extention);
-    // printf("Reponse Content Type: %s\n", http_response.contentType);
-
-    /* Generate actual payload to send with header status*/
-    char payload[fsize];
-    fread(payload, 1, fsize, fp);
-
-    /*Generate response*/
-    /* send HTTP response back to client: webpage */
-    /* note the header must be very secific */
+    /* Graceful exit*/
     if (check == 0)
     {
-        // printf("This is the last request\n");
-        bzero(http_response.connection, sizeof(http_response.connection));
-        strcpy(http_response.connection, "close");
     }
 
-    char response_header[BUFSIZE];
-    // if (strcmp(client_request->connection, "keep-alive") == 0 || strcmp(client_request->connection, "Keep-alive") == 0)
-    // {
-    //     // printf("keep alive!\n");
-    //     sprintf(response_header, "%s 200 OK\r\nContent-Type: %s\r\nContent-Length: %ld\r\nConnection: %s\r\n\r\n", http_response.version, http_response.contentType, fsize, http_response.connection);
-    // }
-    // else
-    // {
-    //     // printf("sending last request: %s\n", http_response.connection);
-    //     sprintf(response_header, "%s 200 OK\r\nContent-Type: %s\r\nContent-Length: %ld\r\nConnection: %s\r\n\r\n", http_response.version, http_response.contentType, fsize, http_response.connection);
-    // }
-
-    /* use for non keep alive*/
-    sprintf(response_header, "%s 200 OK\r\nContent-Type:%s\r\nContent-Length:%ld\r\n\r\n", http_response.version, http_response.contentType, fsize);
-
-    // printf("RESPONSE: \n");
-    printf("%s\n", response_header);
-    /* Now attach the payload*/
-    char full_response[fsize + strlen(response_header)];
-    strcpy(full_response, response_header);
-    // use memcpy() to attach payload to header
-    memcpy(full_response + strlen(full_response), payload, fsize);
-    /* AND we got it! */
-    /* the child processes will all be sending to different {client} addresses, per parent accept() */
-    send(client, full_response, sizeof(full_response), 0);
-    // printf("Full response size : %lu\n", sizeof(full_response));
-
-    /* Do I need this or is connection close in the header enough?*/
-    if ((strcmp(http_response.connection, "close") == 0) || (strcmp(http_response.connection, "Close") == 0))
-    {
-        // printf("Closing client connection....\n");
-        close(client);
-        exit(0);
-        printf("Test exit\n");
-    }
     return 0;
 }
 
 /* If requested file is not in cache, ping the server for it*/
-int ping_server(int sockfd, char *buf)
+int ping_server(int client, void *client_args, char *buf)
 {
+    printf("Client Request: %s\n", buf);
+    HTTP_REQUEST *client_request = (HTTP_REQUEST *)client_args;
 
-    return 0;
+    // remote server we are acting as a client towards
+    struct sockaddr_in httpserver;
+    struct hostent *server;
+
+    server = gethostbyname(client_request->hostname);
+    /* If above fails, send 404*/
+    if (server)
+    {
+        printf("Found server\n");
+        printf("%s: \n", server->h_name);
+    }
+    else
+    {
+        NotFound(client, &client_request);
+    }
+
+    client_request->http_connection = socket(AF_INET, SOCK_STREAM, 0);
+    bzero((char *)&httpserver, sizeof(httpserver));
+    httpserver.sin_family = AF_INET;
+    httpserver.sin_port = htons(80); // assuming port 80 for now
+
+        return 0;
 }
 
 /* Call this at the beginning in case we have what client wants*/
 int check_cache(char *buf)
 {
 
+    FILE *fp;
+
+    char relative_path[BUFSIZE];
+    bzero(relative_path, sizeof(relative_path));
+    strcat(relative_path, "./cache/");
+    strcat(relative_path, buf);
+    printf("relative path: %s\n", relative_path);
+
+    fp = fopen(relative_path, "rb");
+    if (fp == NULL)
+    {
+        printf("File not found in cache, need to hit up server\n");
+        return NOT_CACHED;
+    }
+    else
+    {
+        /* Send file from cache*/
+        printf("Found file in cache!\n");
+    }
+
     return 0;
 }
 
-/* Only after hittig up the server, store the file in the cache*/
+/* Only AFTER HITTING UP SERVER, store the file in the cache*/
 int store_in_cashe(char *buf)
 {
     return 0;
@@ -385,10 +294,21 @@ int store_in_cashe(char *buf)
 
 /* different processes for different requests will be handling this routine */
 /* Once a valid request is received, the proxy will parse the requested URL into the following 3 parts:*/
-int parse_request(int client, char *buf)
+void *parse_request(void *socket_desc)
 {
     // printf("Parsing the HTTP request in this routine \n");
+    // printf("Parsing the HTTP request in this routine \n");
+    pthread_detach(pthread_self());
+    free(socket_desc);
+
+    int n;
+    int sock = *(int *)socket_desc;
+    char buf[BUFSIZE];
+    memset(buf, 0, BUFSIZE);
+    n = recv(sock, buf, BUFSIZE, 0);
     buf[strlen(buf) - 1] = '\0';
+    printf("Client Request:\n%s\n", buf);
+
     // printf("Client Request:\n%s\n", buf);
 
     /*Parse client request*/
@@ -428,14 +348,14 @@ int parse_request(int client, char *buf)
     {
         // bad request?
         client_request.version = "HTTP/1.0";
-        BadRequest(client, &client_request);
+        BadRequest(sock, &client_request);
         return 0;
     }
 
     if (strcmp(client_request.method, "GET") != 0)
     {
         /* Bad request according to writeup*/
-        BadRequest(client, &client_request);
+        BadRequest(sock, &client_request);
         return 0;
     }
 
@@ -446,7 +366,7 @@ int parse_request(int client, char *buf)
     else
     {
         printf("Invalid HTTP version\n");
-        HTTPVersionNotSupported(client, &client_request);
+        HTTPVersionNotSupported(sock, &client_request);
         return 0;
     }
 
@@ -480,33 +400,20 @@ int parse_request(int client, char *buf)
 
     printf("REQUEST file: %s\n", client_request.file);
 
-    struct sockaddr_in httpserver;
-    struct hostent *server;
-    server = gethostbyname(client_request.hostname);
-    /* If above fails, send 404*/
-    if (server)
-    {
-        printf("Found server\n");
-        printf("%s: \n", server->h_name);
-    }
-    else
-    {
-        NotFound(client, &client_request);
-    }
-
     /*Check cache here before pinging server*/
-    int isCached = check_cache(client_request.file);
-
-    client_request.http_connection = socket(AF_INET, SOCK_STREAM, 0);
-    bzero((char *)&httpserver, sizeof(httpserver));
-    httpserver.sin_family = AF_INET;
-    httpserver.sin_port = htons(80);
+    int cache_result = check_cache(client_request.file);
+    if (cache_result == NOT_CACHED)
+    {
+        printf("Ping server\n");
+        ping_server(sock, &client_request, buf);
+    }
 
     /* After parsing and hanlding bad requests, pass routine to service the actual file*/
     /* Pass in client request struct as arg*/
-    int handle = service_request(client, &client_request);
-    // printf("request serviced\n");
-    return 0;
+    // int handle = service_request(client, &client_request);
+
+    close(sock);
+    return NULL;
 }
 
 /* I think this should remain the same from PA2*/
@@ -525,6 +432,7 @@ int main(int argc, char **argv)
     int child_socket;
     signal(SIGINT, sigint_handler);
     check = 1;
+    int *new_sock;
 
     if (argc != 2)
     {
@@ -570,107 +478,25 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    struct stat st = {0};
-
-    if (stat("/cache", &st) == -1)
-    {
-        mkdir("/cache", 0777);
-    }
+    /* Creating Proxy's local cache/file system off the bat*/
+    mkdir("cache", 0777);
 
     /* continously handle client requests */
     while ((client_socket = accept(sockfd, (struct sockaddr *)&clientaddr, &clientlen)) > 0)
     {
-        // accepting a connection means creating a client socket
-        /* this client_socket is how we send data back to the connected client */
-        bzero(&clientaddr, sizeof(clientaddr));
-        /*
-            accept(): extracts the first
-            connection request on the queue of pending connections for the
-            listening socket, sockfd, creates a new connected socket, and
-            returns a new file descriptor referring to that socket.  The
-            newly created socket is not in the listening state.  The original
-            socket sockfd is unaffected by this call.
-        */
 
-        /* Parent basically updates the client socket address for every iteration, with a new socket for that client*/
-        // printf("Accept returned: %d\n", client_socket);
-        if (client_socket < 0)
-        {
-            break;
-        }
-        char buf[BUFSIZE];
-        memset(buf, 0, BUFSIZE);
         /* Write logic for multiple connections - fork() or threads */
         /*TODO: graceful exit*/
         /* Parent spawns child processes to handle incoming requests*/
-        pid_t client_connection = fork();
+        pthread_t sniffer_thread;
 
-        /*Child Code*/
-        if (client_connection == 0)
+        new_sock = malloc(1);
+        *new_sock = client_socket;
+        if (pthread_create(&sniffer_thread, NULL, parse_request, (void *)new_sock) < 0)
         {
-            // child - closes the LISTENING socket, this sockfd doesnt matter to the child, only the parent listening for incoming requests
-            close(sockfd);
-            // printf("child process\n");
-            /* The same client can have as many sequential requests as it wants*/
-            /* Meanwhile, parent will be executing more fork calls*/
-            /* The fork() was for different clients that may also have sequestial requests*/
-            /* The child processes all have their own client addresses*/
-            /* !!! Huge question: how do we only need one accept() - how can one accept() support multiple clients that have multiple requests? */
-            /* this while loop will work for connection keep-alive*/
-            /* set timeout for child sockets - keep alive*/
-            struct timeval tv;
-            tv.tv_sec = 10;
-            tv.tv_usec = 0;
-            if (setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
-            {
-                perror("Error in socket timeout setting: ");
-            }
-
-            while ((n = recv(client_socket, buf, BUFSIZE, 0)) > 0)
-            {
-                // client can keep sending requests
-
-                /* reset timeout value*/
-                tv.tv_sec = 10;
-                tv.tv_usec = 0;
-                if (setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
-                {
-                    perror("Error in socket timeout setting: ");
-                }
-
-                int handle_result = parse_request(client_socket, buf);
-                // printf("Client request serviced...\n");
-                memset(buf, 0, BUFSIZE);
-                /* Dont close socket until receive connection close or timeout of 10s*/
-                // close(client_socket);
-                // exit(0);
-                /* After parsing need to send response, this is handled in parse_request() as well*/
-                /* meanwhile parent is creating more forks() for incoming requests*/
-            }
-
-            /* If SIGINT is hit but we didnt timeout we should just close and exit*/
-            if (check == 0)
-            {
-                close(client_socket);
-                exit(0);
-            }
-
-            /*10 seconds have passed so we timeout*/
-            char timeout[BUFSIZE];
-            bzero(timeout, sizeof(timeout));
-            // printf("client that closed: %d\n", client_socket);
-            sprintf(timeout, "HTTP/1.1 408 Request Timeout\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
-            /* This will only send in the case of a timout,
-            if the server closes the socket on behalf of the client,
-            then this will never send because the client already exited*/
-            send(client_socket, timeout, sizeof(timeout), 0);
-            printf("%s\n", timeout);
-            close(client_socket);
-            exit(0);
+            perror("could not create thread");
+            return 1;
         }
-        /* Parent needs to close client socket*/
-        close(client_socket);
-        /*Parent goes back up to the loop to handle more clients, child may be running multiple requests*/
     }
     /*Accept returns -1 when signal handler closes the socket, so we sleep and let the children finish*/
     // printf("sleeping...\n");
@@ -688,3 +514,7 @@ int main(int argc, char **argv)
     // close(sockfd);
     return 0;
 }
+
+//  while ((n = recv(source_sock, buffer, BUF_SIZE, 0)) > 0) { // read data from input socket
+//         send(destination_sock, buffer, n, 0); // send data to output socket
+//     }
