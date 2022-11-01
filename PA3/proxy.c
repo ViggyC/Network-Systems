@@ -22,6 +22,8 @@
 #include <dirent.h>
 #define BUFSIZE 8192
 #define TEMP_SIZE 1024
+#define CACHED 1
+#define NOT_CACHED 2
 /*https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Connection*/
 
 /* GLOBAL listen socket descriptor*/
@@ -61,8 +63,31 @@ typedef struct
     char *URI;
     char *version;
     char *connection;
-    char *host;
+    char *origin;   // if not included in request header, but in complete URI
+    char *hostname; // if included in request header
+    int http_connection;
+    char *file;
+    char *portNo;
+    char *messageBody;
 } HTTP_REQUEST;
+
+/* This request goes from the proxy (this) to the http server*/
+typedef struct
+{
+    char *method;
+    char *URI;
+    char *version;
+    char *connection;
+    char *host;
+    int portNo;
+    char *messageBody;
+} RELAY_REQUEST;
+
+/* This request goes from the proxy (this) to the http server*/
+typedef struct
+{
+
+} SERVER_RESPONSE;
 
 enum CONTENT_TYPE
 {
@@ -148,7 +173,7 @@ int NotFound(int client, void *client_args)
     char Not_Found[BUFSIZE];
     bzero(Not_Found, sizeof(Not_Found));
     /* review this method of sending to the client*/
-    sprintf(Not_Found, "%s 404 Not Found\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: %s\r\n\r\n", client_request->version, client_request->connection);
+    sprintf(Not_Found, "%s 404 Not Found\r\nContent-Type: text/plain\r\nContent-Length: 0\r\n\r\n", client_request->version);
     printf("%s\n", Not_Found);
     send(client, Not_Found, sizeof(Not_Found), 0);
     if (strcmp(client_request->connection, "close") == 0)
@@ -164,7 +189,7 @@ int BadRequest(int client, void *client_args)
     bzero(BAD_REQUEST, sizeof(BAD_REQUEST));
     HTTP_REQUEST *client_request = (HTTP_REQUEST *)client_args;
     // snprintf(response);
-    /* review this method of sending to the client*/
+    /* connection header?*/
     sprintf(BAD_REQUEST, "HTTP/1.0 400 Bad Request\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: %s\r\n\r\n", client_request->connection);
     printf("%s\n", BAD_REQUEST);
     send(client, BAD_REQUEST, sizeof(BAD_REQUEST), 0);
@@ -348,6 +373,7 @@ int ping_server(int sockfd, char *buf)
 /* Call this at the beginning in case we have what client wants*/
 int check_cache(char *buf)
 {
+
     return 0;
 }
 
@@ -358,7 +384,7 @@ int store_in_cashe(char *buf)
 }
 
 /* different processes for different requests will be handling this routine */
-/* Process will stay in this routine if 200 OK */
+/* Once a valid request is received, the proxy will parse the requested URL into the following 3 parts:*/
 int parse_request(int client, char *buf)
 {
     // printf("Parsing the HTTP request in this routine \n");
@@ -381,23 +407,18 @@ int parse_request(int client, char *buf)
 
     char *host = strstr(host_buf, "Host: ");
     strtok(host, " ");
-    client_request.host = strtok(NULL, "\r\n");
+    client_request.hostname = strtok(NULL, "\r\n");
 
-    char *connection_type = strstr(conn_buf, "Connection: ");
-    strtok(connection_type, " ");
-    client_request.connection = strtok(NULL, "\r\n");
+    // char *connection_type = strstr(conn_buf, "Connection: ");
+    // strtok(connection_type, " ");
+    // client_request.connection = strtok(NULL, "\r\n");
 
     /*************************REQUEST INFO********************************/
     printf("REQUEST method: %s\n", client_request.method);
-    printf("REQUEST page: %s\n", client_request.URI);
+    printf("REQUEST URI: %s\n", client_request.URI);
     printf("REQUEST version: %s\n", client_request.version);
-    printf("REQUEST host: %s\n", client_request.host);
-    printf("REQUEST connection: %s\n\n", client_request.connection);
-
-    /*Check if valid host, otherwise send bad request*/
-    struct hostent *server;
-    char *hostname;
-    server = gethostbyname(hostname);
+    printf("REQUEST host: %s\n", client_request.hostname);
+    // printf("REQUEST connection: %s\n\n", client_request.connection);
 
     /*This sleep is a debugging method to see the children during the graceful exit*/
     // sleep(3);
@@ -407,15 +428,9 @@ int parse_request(int client, char *buf)
     {
         // bad request?
         client_request.version = "HTTP/1.0";
-        client_request.connection = "keep-alive";
         BadRequest(client, &client_request);
-
         return 0;
     }
-
-    /* null terminating for safety*/
-    client_request.method[strlen(client_request.method)] = '\0';
-    client_request.version[strlen(client_request.version)] = '\0';
 
     if (strcmp(client_request.method, "GET") != 0)
     {
@@ -424,7 +439,68 @@ int parse_request(int client, char *buf)
         return 0;
     }
 
+    if (strcmp(client_request.version, "HTTP/1.1") == 0 || strcmp(client_request.version, "HTTP/1.0") == 0)
+    {
+        // do nothing
+    }
+    else
+    {
+        printf("Invalid HTTP version\n");
+        HTTPVersionNotSupported(client, &client_request);
+        return 0;
+    }
+
+    /* null terminating for safety*/
+    client_request.method[strlen(client_request.method)] = '\0';
+    client_request.version[strlen(client_request.version)] = '\0';
+
+    /*********************************************PARSING**********************************************/
+    // need to extract origin server from complete URI
+
+    char *urlSlash = strstr(client_request.URI, "//");
+    if (urlSlash != NULL)
+    {
+        client_request.URI = urlSlash + 2; // Strip http:// prefix as it will fail gethostbyname otherwise
+    }
+
+    printf("REQUEST origin: %s\n", client_request.origin);
+    printf("REQUEST URI: %s\n", client_request.URI);
+
+    /*Now get the actual file the client is requesting from the server*/
+    char *file = strchr(client_request.URI, '/');
+    if (file == NULL || *(file + 1) == '\0')
+    {
+        printf("Client requesting index.html\n");
+        client_request.file = "index.html";
+    }
+    else
+    {
+        client_request.file = file + 1;
+    }
+
+    printf("REQUEST file: %s\n", client_request.file);
+
+    struct sockaddr_in httpserver;
+    struct hostent *server;
+    server = gethostbyname(client_request.hostname);
+    /* If above fails, send 404*/
+    if (server)
+    {
+        printf("Found server\n");
+        printf("%s: \n", server->h_name);
+    }
+    else
+    {
+        NotFound(client, &client_request);
+    }
+
     /*Check cache here before pinging server*/
+    int isCached = check_cache(client_request.file);
+
+    client_request.http_connection = socket(AF_INET, SOCK_STREAM, 0);
+    bzero((char *)&httpserver, sizeof(httpserver));
+    httpserver.sin_family = AF_INET;
+    httpserver.sin_port = htons(80);
 
     /* After parsing and hanlding bad requests, pass routine to service the actual file*/
     /* Pass in client request struct as arg*/
@@ -438,7 +514,7 @@ int main(int argc, char **argv)
 {
     int portno;                    /* port to listen on */
     socklen_t clientlen;           /* byte size of client's address -- need to look into this, seems this is filled in by recvfrom */
-    struct sockaddr_in serveraddr; /* server's addr */
+    struct sockaddr_in serveraddr; /* PROXY addr */
     struct sockaddr_in clientaddr; /* client addr */
     struct hostent *hostp;         /* client host info */
     char temp_buf[BUFSIZE];        // for parsing user input
@@ -492,6 +568,13 @@ int main(int argc, char **argv)
     {
         // error
         exit(1);
+    }
+
+    struct stat st = {0};
+
+    if (stat("/cache", &st) == -1)
+    {
+        mkdir("/cache", 0777);
     }
 
     /* continously handle client requests */
