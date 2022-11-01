@@ -1,0 +1,25 @@
+# Network Systems
+
+This repo contains the programming assignments for CSCI4273 - Network Systems
+
+## Programs
+
+# PA1
+
+UDP FTP program between client and server
+
+Can transfer up to 1GB of data
+
+# PA2
+
+HTTP Web Server
+
+Handles simultaneous client connections and servers web pages from local file system
+
+Implements keep-alive connection for socket resuablility
+
+# PA3
+
+HTTP Web Proxy Server
+
+TODO
