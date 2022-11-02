@@ -11,7 +11,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
-
 #include <signal.h>
 #include <netdb.h>
 #include <sys/types.h>
@@ -65,32 +64,13 @@ typedef struct
     char *URI;
     char *version;
     char *connection;
-    char *origin;   // if not included in request header, but in complete URI
     char *hostname; // if included in request header
-    int http_connection;
+    char *ip;
     char *file;
     char *portNo;
     char *messageBody;
-    char hash[BUFSIZE];
+    char *hash;
 } HTTP_REQUEST;
-
-/* This request goes from the proxy (this) to the http server*/
-typedef struct
-{
-    char *method;
-    char *URI;
-    char *version;
-    char *connection;
-    char *host;
-    int portNo;
-    char *messageBody;
-} RELAY_REQUEST;
-
-/* This request goes from the proxy (this) to the http server*/
-typedef struct
-{
-
-} SERVER_RESPONSE;
 
 enum CONTENT_TYPE
 {
@@ -112,17 +92,9 @@ void error(char *msg)
 /* Graceful Exit*/
 void sigint_handler(int sig)
 {
-    /* close main listening socket - sockfd*/
-    // child processes may continue to finish servicing a request
-    // printf("sig: %d\n", sig);
+
+    /* Closes global listening sock*/
     close(sockfd);
-    // pid_t child_pid;
-    // while ((child_pid = wait(NULL)) > 0)
-    //     ;
-    // // {
-    //     printf("Parent: %d\n", getpid());
-    //     printf("CHild: %d\n", child_pid);
-    // }
     check = 0;
 }
 
@@ -138,11 +110,7 @@ int NotFound(int client, void *client_args)
     sprintf(Not_Found, "%s 404 Not Found\r\nContent-Type: text/plain\r\nContent-Length: 0\r\n\r\n", client_request->version);
     printf("%s\n", Not_Found);
     send(client, Not_Found, sizeof(Not_Found), 0);
-    if (strcmp(client_request->connection, "close") == 0)
-    {
-        close(client);
-    }
-    return 0;
+    exit(0);
 }
 
 int BadRequest(int client, void *client_args)
@@ -152,14 +120,10 @@ int BadRequest(int client, void *client_args)
     HTTP_REQUEST *client_request = (HTTP_REQUEST *)client_args;
     // snprintf(response);
     /* connection header?*/
-    sprintf(BAD_REQUEST, "HTTP/1.0 400 Bad Request\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: %s\r\n\r\n", client_request->connection);
+    sprintf(BAD_REQUEST, "HTTP/1.0 400 Bad Request\r\nContent-Type: text/plain\r\nContent-Length: 0\r\n\r\n");
     printf("%s\n", BAD_REQUEST);
     send(client, BAD_REQUEST, sizeof(BAD_REQUEST), 0);
-    if (strcmp(client_request->connection, "close") == 0)
-    {
-        close(client);
-    }
-    return 0;
+    exit(0);
 }
 
 int MethodNotAllowed(int client, void *client_args)
@@ -171,11 +135,7 @@ int MethodNotAllowed(int client, void *client_args)
     sprintf(response, "%s 405 Method Not Allowed\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: %s\r\n\r\n", client_request->version, client_request->connection);
     printf("%s\n", response);
     send(client, response, sizeof(response), 0);
-    if (strcmp(client_request->connection, "close") == 0)
-    {
-        close(client);
-    }
-    return 0;
+    exit(0);
 }
 
 int Forbidden(int client, void *client_args)
@@ -184,14 +144,10 @@ int Forbidden(int client, void *client_args)
     char response[BUFSIZE];
     bzero(response, sizeof(response));
     HTTP_REQUEST *client_request = (HTTP_REQUEST *)client_args;
-    sprintf(response, "%s 403 Forbidden\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: %s\r\n\r\n", client_request->version, client_request->connection);
+    sprintf(response, "%s 403 Forbidden\r\nContent-Type: text/plain\r\nContent-Length: 0\r\n\r\n", client_request->version);
     printf("%s\n", response);
     send(client, response, sizeof(response), 0);
-    if (strcmp(client_request->connection, "close") == 0)
-    {
-        close(client);
-    }
-    return 0;
+    exit(0);
 }
 
 int HTTPVersionNotSupported(int client, void *client_args)
@@ -199,14 +155,10 @@ int HTTPVersionNotSupported(int client, void *client_args)
     char response[BUFSIZE];
     bzero(response, sizeof(response));
     HTTP_REQUEST *client_request = (HTTP_REQUEST *)client_args;
-    sprintf(response, "HTTP/1.0 505 HTTP Version Not Supported\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: %s\r\n\r\n", client_request->connection);
+    sprintf(response, "HTTP/1.0 505 HTTP Version Not Supported\r\nContent-Type: text/plain\r\nContent-Length: 0\r\n\r\n");
     printf("%s\n", response);
     send(client, response, sizeof(response), 0);
-    if (strcmp(client_request->connection, "close") == 0)
-    {
-        close(client);
-    }
-    return 0;
+    exit(0);
 }
 
 int isDirectory(const char *path)
@@ -215,6 +167,17 @@ int isDirectory(const char *path)
     if (stat(path, &statbuf) != 0)
         return 0;
     return S_ISDIR(statbuf.st_mode);
+}
+
+void md5_generator(char *original, char *md5_hash)
+{
+    unsigned long hash = 5381;
+    int c;
+
+    while ((c = *original++))
+        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
+
+    sprintf(md5_hash, "%lu", hash);
 }
 
 /* Send Back to CLIENT - exactly what server sends back to us*/
@@ -230,36 +193,131 @@ int service_request(int client, void *client_args)
 }
 
 /* If requested file is not in cache, ping the server for it*/
-int ping_server(int client, void *client_args, char *buf)
+int relay(int client, void *client_args, char *buf)
 {
-    printf("Client Request: %s\n", buf);
     HTTP_REQUEST *client_request = (HTTP_REQUEST *)client_args;
-
     // remote server we are acting as a client towards
     struct sockaddr_in httpserver;
+    struct in_addr **addr_list;
     struct hostent *server;
+    int connfd;
+    char IP[100];
+    bzero(IP, sizeof(IP));
+    int n;
+    FILE *cache_fd;
 
+    printf("Get host by name: %s\n", client_request->hostname);
     server = gethostbyname(client_request->hostname);
     /* If above fails, send 404*/
     if (server)
     {
-        printf("Found server\n");
-        printf("%s: \n", server->h_name);
+        printf("Found server: %s \n", server->h_name);
     }
     else
     {
+        printf("404 Server Not Found\n");
         NotFound(client, &client_request);
     }
 
-    client_request->http_connection = socket(AF_INET, SOCK_STREAM, 0);
+    /* need to convert hostname to IP address*/
+    addr_list = (struct in_addr **)server->h_addr_list;
+    for (int i = 0; addr_list[i] != NULL; i++)
+    {
+        strcpy(IP, inet_ntoa(*addr_list[i]));
+        // break after first find
+        break;
+    }
+    printf("%s resolved to %s\n", client_request->hostname, IP);
+    client_request->ip = IP;
+
+    /*Blocklost*/
+    FILE *bl = fopen("./blocklist", "r");
+    char hostname[254];
+    while (fgets(hostname, sizeof(hostname), bl))
+    {
+        // printf("%s\n", hostname);
+        if ((hostname[0] != '\n'))
+        {
+            hostname[strlen(hostname) - 1] = '\0';
+            if (strcmp(client_request->ip, hostname) == 0)
+            {
+                /*This domain has been blocked*/
+                printf("%s is blocked\n", hostname);
+                Forbidden(client, &client_request);
+            }
+        }
+    }
+    fclose(bl);
+
+    connfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (connfd == -1)
+    {
+        printf("socket creation failed...\n");
+        exit(0);
+    }
+
     bzero((char *)&httpserver, sizeof(httpserver));
     httpserver.sin_family = AF_INET;
+    httpserver.sin_addr.s_addr = inet_addr(IP);
     httpserver.sin_port = htons(80); // assuming port 80 for now
 
-        return 0;
+    /* Now we can make a connection to the resolved host*/
+    int connection_status = connect(connfd, (struct sockaddr *)&httpserver, sizeof(httpserver));
+    if (connection_status == -1)
+    {
+        printf("Connection failed\n");
+    }
+
+    /* Now we relay the client request to the server*/
+    memset(buf, 0, BUFSIZE);
+    sprintf(buf, "GET /%s %s\r\nHost: %s\r\n\r\n", client_request->file, client_request->version, client_request->hostname);
+    printf("Forwarding request:\n%s\n", buf);
+
+    /*need to check this!*/
+    int bytes_sent = send(connfd, buf, strlen(buf), 0);
+    // printf("bytes sent: %d\n", bytes_sent);
+    memset(buf, 0, BUFSIZE);
+
+    /*This is where we store file in cache*/
+    /* We can also send it to the client at the same time!*/
+    int store;
+    char cache_file[strlen("cache/") + strlen(client_request->hash)]; // Buffer to store relative directory of file in cache
+    strcpy(cache_file, "cache/");
+    strcat(cache_file, client_request->hash);
+    cache_fd = fopen(cache_file, "wb");
+
+    while ((store = recv(connfd, buf, BUFSIZE, 0)) > 0)
+    {
+        if (store < 0)
+        {
+            printf("ERROR in recvfrom\n");
+            exit(1);
+        }
+
+        // need to also store in cache
+        //  fprintf(fp, "%s", buf);
+        printf("buf: %s", buf);
+        send(client, buf, strlen(buf), 0);
+        int bytes_written = fwrite(buf, 1, store, cache_fd);
+        // reset buf for next read
+        printf("wrote %d bytes\n", bytes_written);
+        memset(buf, 0, BUFSIZE);
+    }
+    fclose(cache_fd);
+
+    // /* So now we have sent the clients request to the resolved host, now we can get its response*/
+    // bzero(buf, sizeof(buf));
+    // while ((n = recv(connfd, buf, BUFSIZE, 0)) > 0)
+    // {                            // read data from input socket
+    //     send(client, buf, n, 0); // send data to output socket
+    //     bzero(buf, sizeof(buf));
+    // }
+
+    return 0;
 }
 
 /* Call this at the beginning in case we have what client wants*/
+/* cant use fopen to query cache, need to use DIRENT*/
 int check_cache(char *buf)
 {
 
@@ -269,21 +327,11 @@ int check_cache(char *buf)
     bzero(relative_path, sizeof(relative_path));
     strcat(relative_path, "./cache/");
     strcat(relative_path, buf);
+
+    /* need to convert to md5 hash*/
     printf("relative path: %s\n", relative_path);
 
-    fp = fopen(relative_path, "rb");
-    if (fp == NULL)
-    {
-        printf("File not found in cache, need to hit up server\n");
-        return NOT_CACHED;
-    }
-    else
-    {
-        /* Send file from cache*/
-        printf("Found file in cache!\n");
-    }
-
-    return 0;
+    return NOT_CACHED;
 }
 
 /* Only AFTER HITTING UP SERVER, store the file in the cache*/
@@ -296,20 +344,16 @@ int store_in_cashe(char *buf)
 /* Once a valid request is received, the proxy will parse the requested URL into the following 3 parts:*/
 void *parse_request(void *socket_desc)
 {
-    // printf("Parsing the HTTP request in this routine \n");
-    // printf("Parsing the HTTP request in this routine \n");
+
     pthread_detach(pthread_self());
-    free(socket_desc);
 
     int n;
     int sock = *(int *)socket_desc;
     char buf[BUFSIZE];
     memset(buf, 0, BUFSIZE);
     n = recv(sock, buf, BUFSIZE, 0);
-    buf[strlen(buf) - 1] = '\0';
-    printf("Client Request:\n%s\n", buf);
 
-    // printf("Client Request:\n%s\n", buf);
+    printf("Client request:\n%s\n", buf);
 
     /*Parse client request*/
     HTTP_REQUEST client_request;
@@ -329,16 +373,31 @@ void *parse_request(void *socket_desc)
     strtok(host, " ");
     client_request.hostname = strtok(NULL, "\r\n");
 
-    // char *connection_type = strstr(conn_buf, "Connection: ");
-    // strtok(connection_type, " ");
-    // client_request.connection = strtok(NULL, "\r\n");
+    char *connection_type = strstr(conn_buf, "Connection: ");
+    strtok(connection_type, " ");
+    client_request.connection = strtok(NULL, "\r\n");
 
     /*************************REQUEST INFO********************************/
-    printf("REQUEST method: %s\n", client_request.method);
-    printf("REQUEST URI: %s\n", client_request.URI);
-    printf("REQUEST version: %s\n", client_request.version);
-    printf("REQUEST host: %s\n", client_request.hostname);
-    // printf("REQUEST connection: %s\n\n", client_request.connection);
+    /*Blocklost*/
+    FILE *bl = fopen("./blocklist", "r");
+    char hostname[254];
+    while (fgets(hostname, sizeof(hostname), bl))
+    {
+        // printf("%s\n", hostname);
+        if ((hostname[0] != '\n'))
+        {
+            hostname[strlen(hostname) - 1] = '\0';
+
+            if (strcmp(client_request.hostname, hostname) == 0)
+            {
+                /*This domain has been blocked*/
+                printf("%s is blocked\n", hostname);
+                Forbidden(sock, &client_request);
+            }
+        }
+    }
+
+    fclose(bl);
 
     /*This sleep is a debugging method to see the children during the graceful exit*/
     // sleep(3);
@@ -383,9 +442,6 @@ void *parse_request(void *socket_desc)
         client_request.URI = urlSlash + 2; // Strip http:// prefix as it will fail gethostbyname otherwise
     }
 
-    printf("REQUEST origin: %s\n", client_request.origin);
-    printf("REQUEST URI: %s\n", client_request.URI);
-
     /*Now get the actual file the client is requesting from the server*/
     char *file = strchr(client_request.URI, '/');
     if (file == NULL || *(file + 1) == '\0')
@@ -398,20 +454,40 @@ void *parse_request(void *socket_desc)
         client_request.file = file + 1;
     }
 
+    printf("REQUEST method: %s\n", client_request.method);
+    printf("REQUEST URI: %s\n", client_request.URI);
+    printf("REQUEST version: %s\n", client_request.version);
+    printf("REQUEST host: %s\n", client_request.hostname);
+    printf("REQUEST connection: %s\n", client_request.connection);
     printf("REQUEST file: %s\n", client_request.file);
+    printf("\n\n");
+
+    /* generate hash*/
+    char hash_input[strlen(client_request.hostname) + strlen(client_request.file) + 1];
+    bzero(hash_input, sizeof(hash_input));
+    strcpy(hash_input, client_request.hostname);
+    strcat(hash_input, "/");
+    strcat(hash_input, client_request.file);
+
+    char hash_output[strlen(client_request.hostname) + strlen(client_request.file) + 1];
+    bzero(hash_output, sizeof(hash_output));
+
+    md5_generator(hash_input, hash_output);
+
+    client_request.hash = hash_output;
 
     /*Check cache here before pinging server*/
+    // instead of client_request.file, pass in the md5 hash
     int cache_result = check_cache(client_request.file);
     if (cache_result == NOT_CACHED)
     {
-        printf("Ping server\n");
-        ping_server(sock, &client_request, buf);
+        relay(sock, &client_request, buf);
     }
 
     /* After parsing and hanlding bad requests, pass routine to service the actual file*/
     /* Pass in client request struct as arg*/
     // int handle = service_request(client, &client_request);
-
+    free(socket_desc);
     close(sock);
     return NULL;
 }
@@ -419,7 +495,6 @@ void *parse_request(void *socket_desc)
 /* I think this should remain the same from PA2*/
 int main(int argc, char **argv)
 {
-    int portno;                    /* port to listen on */
     socklen_t clientlen;           /* byte size of client's address -- need to look into this, seems this is filled in by recvfrom */
     struct sockaddr_in serveraddr; /* PROXY addr */
     struct sockaddr_in clientaddr; /* client addr */
@@ -430,19 +505,24 @@ int main(int argc, char **argv)
     int n;                         /* message byte size */
     int client_socket;             /* each process will have its own*/
     int child_socket;
-    signal(SIGINT, sigint_handler);
     check = 1;
     int *new_sock;
+    int portno; /* port to listen on */
+    int timeout;
 
-    if (argc != 2)
+    /* SIGINT Graceful Exit Handler*/
+    signal(SIGINT, sigint_handler);
+
+    if (argc != 3)
     {
-        fprintf(stderr, "usage: %s <port>\n", argv[0]);
+        fprintf(stderr, "usage: %s <port> <timeout>\n", argv[0]);
         exit(1);
     }
 
     portno = atoi(argv[1]);
-    char server_message[256] = "This is the webserver\n";
+    timeout = atoi(argv[2]);
 
+    /*listening socket*/
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
 
     /* setsockopt: Handy debugging trick that lets
@@ -514,7 +594,3 @@ int main(int argc, char **argv)
     // close(sockfd);
     return 0;
 }
-
-//  while ((n = recv(source_sock, buffer, BUF_SIZE, 0)) > 0) { // read data from input socket
-//         send(destination_sock, buffer, n, 0); // send data to output socket
-//     }
