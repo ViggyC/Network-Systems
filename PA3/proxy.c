@@ -286,23 +286,27 @@ int relay(int client, void *client_args, char *buf)
     strcat(cache_file, client_request->hash);
     cache_fd = fopen(cache_file, "wb");
 
+    /* this loop is not exiting*/
+    /* need a different condition? carriage return?*/
     while ((store = recv(connfd, buf, BUFSIZE, 0)) > 0)
     {
         if (store < 0)
         {
             printf("ERROR in recvfrom\n");
-            exit(1);
+            break;
         }
 
         // need to also store in cache
         //  fprintf(fp, "%s", buf);
         printf("buf: %s", buf);
-        send(client, buf, strlen(buf), 0);
+        send(client, buf, store, 0);
         int bytes_written = fwrite(buf, 1, store, cache_fd);
         // reset buf for next read
         printf("wrote %d bytes\n", bytes_written);
         memset(buf, 0, BUFSIZE);
     }
+
+    printf("out here\n");
     fclose(cache_fd);
 
     // /* So now we have sent the clients request to the resolved host, now we can get its response*/
@@ -351,6 +355,8 @@ void *parse_request(void *socket_desc)
     int sock = *(int *)socket_desc;
     char buf[BUFSIZE];
     memset(buf, 0, BUFSIZE);
+
+    /* Add a loop for keep alive*/
     n = recv(sock, buf, BUFSIZE, 0);
 
     printf("Client request:\n%s\n", buf);

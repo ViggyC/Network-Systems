@@ -1,4 +1,4 @@
-(echo -en "GET http://www.example.com/ HTTP/1.1\r\nHost: example.com\r\n\r\n")  | nc localhost 8000
+(echo -en "GET http://www.example.com/ HTTP/1.1\r\nHost: example.com\r\nConnection: keep-alive\r\n\r\n")  | nc localhost 8000
 
 (echo -en "GET http://www.google.com/ HTTP/1.1\r\nHost: www.google.com\r\n\r\n")  | nc localhost 8000
 
