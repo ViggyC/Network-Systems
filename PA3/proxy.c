@@ -44,15 +44,6 @@ connection request from a client. When a connection is available,
 the socket created is ready for use to read data from the process that requested the connection.
 The call accepts the first connection on its queue of pending connections for the given socket socket.*/
 
-typedef struct
-{
-    char version[TEMP_SIZE];
-    char status[TEMP_SIZE];
-    char contentType[TEMP_SIZE];
-    char connection[TEMP_SIZE];
-    int length;
-} HTTPResponseHeader;
-
 /*
 Request Method: GET
 Request URI: /Protocols/rfc1945/rfc1945
@@ -71,6 +62,15 @@ typedef struct
     char *messageBody;
     char *hash;
 } HTTP_REQUEST;
+
+typedef struct
+{
+    char version[TEMP_SIZE];
+    char status[TEMP_SIZE];
+    char contentType[TEMP_SIZE];
+    char connection[TEMP_SIZE];
+    int length;
+} HTTPResponseHeader;
 
 enum CONTENT_TYPE
 {
@@ -96,6 +96,49 @@ void sigint_handler(int sig)
     /* Closes global listening sock*/
     close(sockfd);
     check = 0;
+}
+
+/* If quering the cache*/
+int getContentType(char *contentType, char *fileExtension)
+{
+
+    if (strcmp(fileExtension, ".html") == 0 || strcmp(fileExtension, ".htm") == 0)
+    {
+        strcpy(contentType, "text/html");
+    }
+    else if (strcmp(fileExtension, ".txt") == 0)
+    {
+        strcpy(contentType, "text/plain");
+    }
+    else if (strcmp(fileExtension, ".png") == 0)
+    {
+        strcpy(contentType, "img/png");
+    }
+    else if (strcmp(fileExtension, ".gif") == 0)
+    {
+        strcpy(contentType, "image/gif");
+    }
+    else if (strcmp(fileExtension, ".jpg") == 0)
+    {
+        strcpy(contentType, "image/jpg");
+    }
+
+    else if (strcmp(fileExtension, ".css") == 0)
+    {
+        strcpy(contentType, "text/css");
+    }
+
+    else if (strcmp(fileExtension, ".js") == 0)
+    {
+        strcpy(contentType, "application/javascript");
+    }
+
+    else if (strcmp(fileExtension, ".ico") == 0)
+    {
+        strcpy(contentType, "image/x-icon");
+    }
+
+    return 0;
 }
 
 /********************************** Invalid Requests****************************************/
@@ -178,18 +221,6 @@ void md5_generator(char *original, char *md5_hash)
         hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
 
     sprintf(md5_hash, "%lu", hash);
-}
-
-/* Send Back to CLIENT - exactly what server sends back to us*/
-int service_request(int client, void *client_args)
-{
-
-    /* Graceful exit*/
-    if (check == 0)
-    {
-    }
-
-    return 0;
 }
 
 /* If requested file is not in cache, ping the server for it*/
@@ -288,8 +319,9 @@ int relay(int client, void *client_args, char *buf)
 
     /* this loop is not exiting*/
     /* need a different condition? carriage return?*/
-    while ((store = recv(connfd, buf, BUFSIZE, 0)) > 0)
+    while ((store = recv(connfd, buf, BUFSIZE, 0)) >= 0)
     {
+        printf("store: %d\n", store);
         if (store < 0)
         {
             printf("ERROR in recvfrom\n");
@@ -335,23 +367,137 @@ int check_cache(char *buf)
     /* need to convert to md5 hash*/
     printf("relative path: %s\n", relative_path);
 
-    return NOT_CACHED;
+    if (access(relative_path, F_OK) == 0)
+    {
+        printf("Found %s in cache!\n", relative_path);
+        return CACHED;
+    }
+    else
+    {
+        printf("%s NOT FOUND, need to ping server!\n", relative_path);
+
+        return NOT_CACHED;
+    }
 }
 
-/* Only AFTER HITTING UP SERVER, store the file in the cache*/
-int store_in_cashe(char *buf)
+/* This is basically service_request from PA2*/
+int send_from_cache(int client, void *client_args)
 {
+
+    HTTP_REQUEST *client_request = (HTTP_REQUEST *)client_args;
+    HTTPResponseHeader http_response; /* to send back to client*/
+    FILE *fp;                         // file descriptor for page to send to client
+    ssize_t fsize;
+
+    /* Just get version right away, part of server response*/
+    strcpy(http_response.version, client_request->version);
+    // printf("HTTP version response: %s\n", http_response.version);
+
+    /* Some client may not send a connection type - dumb*/
+    if (client_request->connection != NULL)
+    {
+        strcpy(http_response.connection, client_request->connection);
+    }
+
+    char relative_path[TEMP_SIZE];
+    bzero(relative_path, sizeof(relative_path)); // clear it!!!!!!!!!!
+
+    /* hard code root directory www*/
+    strcat(relative_path, "cache/");
+    strcat(relative_path, client_request->hash);
+
+    printf("relative path: %s\n", relative_path);
+    fp = fopen(relative_path, "rb");
+
+    /* This shouldn't happen but check anyways*/
+    if (fp == NULL)
+    {
+        // printf("%s does not exist!\n", relative_path);
+        NotFound(client, client_request);
+        exit(0);
+    }
+
+    fseek(fp, 0, SEEK_END);
+    fsize = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+
+    /* GET CONTENT TYPE!!!!!!*/
+    char *file_extention = strchr(client_request->file, '.');
+    // printf("File extension: %s\n", file_extention);
+    if (file_extention == NULL)
+    {
+        NotFound(client, client_request);
+        exit(1);
+    }
+    getContentType(http_response.contentType, file_extention);
+    printf("Reponse Content Type: %s\n", http_response.contentType);
+
+    /* Generate actual payload to send with header status*/
+    char payload[fsize];
+    fread(payload, 1, fsize, fp);
+
+    /* Graceful exit check?*/
+    if (check == 0)
+    {
+        // printf("This is the last request\n");
+        bzero(http_response.connection, sizeof(http_response.connection));
+        strcpy(http_response.connection, "close");
+    }
+
+    char response_header[BUFSIZE];
+    if (strcmp(client_request->connection, "keep-alive") == 0 || strcmp(client_request->connection, "Keep-alive") == 0)
+    {
+        // printf("keep alive!\n");
+        sprintf(response_header, "%s 200 OK\r\nContent-Type: %s\r\nContent-Length: %ld\r\nConnection: %s\r\n\r\n", http_response.version, http_response.contentType, fsize, http_response.connection);
+    }
+    else
+    {
+        // printf("sending last request: %s\n", http_response.connection);
+        sprintf(response_header, "%s 200 OK\r\nContent-Type: %s\r\nContent-Length: %ld\r\nConnection: %s\r\n\r\n", http_response.version, http_response.contentType, fsize, http_response.connection);
+    }
+
+    // printf("RESPONSE: \n");
+    printf("%s\n", response_header);
+    /* Now attach the payload*/
+    char full_response[fsize + strlen(response_header)];
+    strcpy(full_response, response_header);
+    // use memcpy() to attach payload to header
+    memcpy(full_response + strlen(full_response), payload, fsize);
+    /* AND we got it! */
+    /* the child processes will all be sending to different {client} addresses, per parent accept() */
+    send(client, full_response, sizeof(full_response), 0);
+    // printf("Full response size : %lu\n", sizeof(full_response));
+
+    /* Do I need this or is connection close in the header enough?*/
+    if ((strcmp(http_response.connection, "close") == 0) || (strcmp(http_response.connection, "Close") == 0))
+    {
+        // printf("Closing client connection....\n");
+        close(client);
+        exit(0);
+    }
+
     return 0;
 }
 
-/* different processes for different requests will be handling this routine */
-/* Once a valid request is received, the proxy will parse the requested URL into the following 3 parts:*/
+/*
+parse_request
+Workflow:
+
+1. Proxy will receive request from client
+2. Proxy will parse the request into METHOD, URL, VERSION, HOSTNAME, and CONNECTION
+    Store these values in the client request struct (same as PA2)
+3. Proxy will use the hostname and the URL/filename to hash the requested file
+4. If the generated hash is not in our cache => ping the server
+5. Else just send from the cache
+
+*/
 void *parse_request(void *socket_desc)
 {
 
     pthread_detach(pthread_self());
 
     int n;
+    /* This is the client socket*/
     int sock = *(int *)socket_desc;
     char buf[BUFSIZE];
     memset(buf, 0, BUFSIZE);
@@ -383,8 +529,7 @@ void *parse_request(void *socket_desc)
     strtok(connection_type, " ");
     client_request.connection = strtok(NULL, "\r\n");
 
-    /*************************REQUEST INFO********************************/
-    /*Blocklost*/
+    /*Blocklist*/
     FILE *bl = fopen("./blocklist", "r");
     char hostname[254];
     while (fgets(hostname, sizeof(hostname), bl))
@@ -402,8 +547,8 @@ void *parse_request(void *socket_desc)
             }
         }
     }
-
     fclose(bl);
+    /* end of blocklist*/
 
     /*This sleep is a debugging method to see the children during the graceful exit*/
     // sleep(3);
@@ -415,6 +560,19 @@ void *parse_request(void *socket_desc)
         client_request.version = "HTTP/1.0";
         BadRequest(sock, &client_request);
         return 0;
+    }
+
+    /*Keep alive implementation*/
+    if (strcmp(client_request.version, "HTTP/1.1") == 0 && client_request.connection == NULL)
+    {
+        client_request.connection = "keep-alive";
+        // printf("REQUEST connection: %s\n\n", client_request.connection);
+    }
+
+    if (strcmp(client_request.version, "HTTP/1.0") == 0 && client_request.connection == NULL)
+    {
+        client_request.connection = "close";
+        // printf("REQUEST connection: %s\n\n", client_request.connection);
     }
 
     if (strcmp(client_request.method, "GET") != 0)
@@ -441,14 +599,17 @@ void *parse_request(void *socket_desc)
 
     /*********************************************PARSING**********************************************/
     // need to extract origin server from complete URI
-
+    // this will cut out http://
+    // ex: http://www.example.com/testing.txt =>www.example.com/testing.txt
     char *urlSlash = strstr(client_request.URI, "//");
     if (urlSlash != NULL)
     {
-        client_request.URI = urlSlash + 2; // Strip http:// prefix as it will fail gethostbyname otherwise
+        client_request.URI = urlSlash + 2;
     }
 
     /*Now get the actual file the client is requesting from the server*/
+    // www.example.com/testing.txt => testing.txt
+    // need to test this more!!!
     char *file = strchr(client_request.URI, '/');
     if (file == NULL || *(file + 1) == '\0')
     {
@@ -468,30 +629,37 @@ void *parse_request(void *socket_desc)
     printf("REQUEST file: %s\n", client_request.file);
     printf("\n\n");
 
-    /* generate hash*/
+    /* generate hash: all we need is the hostname and the filename*/
     char hash_input[strlen(client_request.hostname) + strlen(client_request.file) + 1];
     bzero(hash_input, sizeof(hash_input));
     strcpy(hash_input, client_request.hostname);
-    strcat(hash_input, "/");
+    strcat(hash_input, "/"); // add this to denote separation between domain and filename
     strcat(hash_input, client_request.file);
 
     char hash_output[strlen(client_request.hostname) + strlen(client_request.file) + 1];
     bzero(hash_output, sizeof(hash_output));
 
+    /* calling hashing function*/
     md5_generator(hash_input, hash_output);
-
+    /* now we can check if the request is already in our cache!*/
     client_request.hash = hash_output;
 
     /*Check cache here before pinging server*/
-    // instead of client_request.file, pass in the md5 hash
-    int cache_result = check_cache(client_request.file);
+    int cache_result = check_cache(client_request.hash);
+    /* this will return NOT_CACHED if its not in the cache directory our the timeout hit*/
     if (cache_result == NOT_CACHED)
     {
         relay(sock, &client_request, buf);
     }
+    else if (cache_result == CACHED)
+    {
+        // printf("Sending from cache\n");
+        send_from_cache(sock, &client_request);
+    }
 
     /* After parsing and hanlding bad requests, pass routine to service the actual file*/
     /* Pass in client request struct as arg*/
+    /* Move this in relay() ??*/
     // int handle = service_request(client, &client_request);
     free(socket_desc);
     close(sock);
