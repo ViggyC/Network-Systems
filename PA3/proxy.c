@@ -190,7 +190,11 @@ int Forbidden(int client, void *client_args)
     sprintf(response, "%s 403 Forbidden\r\nContent-Type: text/plain\r\nContent-Length: 0\r\n\r\n", client_request->version);
     printf("%s\n", response);
     send(client, response, sizeof(response), 0);
-    exit(0);
+    if (strcmp(client_request->connection, "close") == 0)
+    {
+        close(client);
+    }
+    return 0;
 }
 
 int HTTPVersionNotSupported(int client, void *client_args)
@@ -389,7 +393,7 @@ int relay(int client, void *client_args, char *buf)
             printf("bytes read: %d\n", bytes_read);
             total_read += bytes_read;
             char *remainder = buf;
-            printf("Test\n");
+            // printf("Test\n");
             bytes_written = fwrite(remainder, bytes_read, 1, cache_fd);
         }
     }
@@ -409,6 +413,7 @@ int relay(int client, void *client_args, char *buf)
 
 /* Call this at the beginning in case we have what client wants*/
 /* cant use fopen to query cache, need to use DIRENT*/
+/* Need to implement expiration!!!!!!!!!!!!!!!!!!*/
 int check_cache(char *buf)
 {
 
@@ -594,27 +599,6 @@ void *parse_request(void *socket_desc)
     strtok(connection_type, " ");
     client_request.connection = strtok(NULL, "\r\n");
 
-    /*Blocklist*/
-    FILE *bl = fopen("./blocklist", "r");
-    char hostname[254];
-    while (fgets(hostname, sizeof(hostname), bl))
-    {
-        // printf("%s\n", hostname);
-        if ((hostname[0] != '\n'))
-        {
-            hostname[strlen(hostname) - 1] = '\0';
-
-            if (strcmp(client_request.hostname, hostname) == 0)
-            {
-                /*This domain has been blocked*/
-                printf("%s is blocked\n", hostname);
-                Forbidden(sock, &client_request);
-            }
-        }
-    }
-    fclose(bl);
-    /* end of blocklist*/
-
     /*This sleep is a debugging method to see the children during the graceful exit*/
     // sleep(3);
     // printf("Children slept for 5 ms\n");
@@ -704,6 +688,29 @@ void *parse_request(void *socket_desc)
     printf("REQUEST connection: %s\n", client_request.connection);
     printf("REQUEST file: %s\n", client_request.file);
     printf("\n\n");
+
+    /*Blocklist*/
+    FILE *bl = fopen("./blocklist", "r");
+    char hostname[254];
+    while (fgets(hostname, sizeof(hostname), bl))
+    {
+        // printf("%s\n", hostname);
+        if ((hostname[0] != '\n'))
+        {
+            hostname[strlen(hostname) - 1] = '\0';
+
+            if (strcmp(client_request.hostname, hostname) == 0)
+            {
+                /*This domain has been blocked*/
+                printf("%s is blocked\n", hostname);
+                Forbidden(sock, &client_request);
+                printf("returned from forbidden\n");
+                exit(0); //?
+            }
+        }
+    }
+    fclose(bl);
+    /* end of blocklist*/
 
     /* generate hash: all we need is the hostname and the filename*/
     char hash_input[strlen(client_request.hostname) + strlen(client_request.file) + 1];
