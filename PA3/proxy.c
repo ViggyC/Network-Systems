@@ -28,8 +28,9 @@
 /*https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Connection*/
 
 /* GLOBAL listen socket descriptor*/
-int sockfd; /* server socket file descriptor*/
-int check;  /*global flag for children to terminate on graceful exit*/
+int sockfd;  /* server socket file descriptor*/
+int check;   /*global flag for children to terminate on graceful exit*/
+int timeout; /* global timeout value*/
 
 /*https://www.stackpath.com/edge-academy/what-is-keep-alive/#:~:text=Overview,connection%20header%20can%20be%20used.*/
 
@@ -423,19 +424,37 @@ int check_cache(char *buf)
     bzero(relative_path, sizeof(relative_path));
     strcat(relative_path, "./cache/");
     strcat(relative_path, buf);
-
     /* need to convert to md5 hash*/
     printf("relative path: %s\n", relative_path);
+
+    /* for checking time modifed*/
+    struct stat file_stat;
+    DIR *dir = opendir("./cache");
 
     if (access(relative_path, F_OK) == 0)
     {
         printf("Found %s in cache!\n", relative_path);
+        /* check time modified*/
+        /* Source: https://www.ibm.com/docs/en/i/7.3?topic=ssw_ibm_i_73/apis/stat.html*/
+        if (stat(relative_path, &file_stat) == 0)
+        {
+            time_t file_modified = file_stat.st_mtime; // The most recent time the contents of the file were changed.
+            time_t now = time(NULL);                   // https://stackoverflow.com/questions/7550269/what-is-timenull-in-c#:~:text=The%20call%20to%20time(NULL,point%20to%20the%20current%20time.
+            double time_left = difftime(now, file_modified);
+            printf("This many seconds have passed since last cache: %f\n", time_left);
+            if (time_left > timeout)
+            {
+                printf("%s expired and in cache, need to ping server again\n", relative_path);
+                return NOT_CACHED;
+            }
+        }
+
+        printf("Not expired and in Cache!\n");
         return CACHED;
     }
     else
     {
         printf("%s NOT FOUND, need to ping server!\n", relative_path);
-
         return NOT_CACHED;
     }
 }
@@ -735,21 +754,16 @@ void *parse_request(void *socket_desc)
         /* Not in cache so lets forward to the server!*/
         relay(sock, &client_request, buf);
         /* What I could do here is just store the payload in the cache and then call send from cache immediately after*/
-        printf("returnong from relay\n");
+        printf("File has been cached..... now sending it from cache\n");
         send_from_cache(sock, &client_request);
-        printf("returnong from send_from_cache\n");
+        printf("sent from cache\n");
     }
     else if (cache_result == CACHED)
     {
         send_from_cache(sock, &client_request);
     }
 
-    /* After parsing and hanlding bad requests, pass routine to service the actual file*/
-    /* Pass in client request struct as arg*/
-    /* Move this in relay() ??*/
-    // int handle = service_request(client, &client_request);
     free(socket_desc);
-    // close(sock);
     printf("Done!!!\n");
     return NULL;
 }
@@ -770,11 +784,10 @@ int main(int argc, char **argv)
     check = 1;
     int *new_sock;
     int portno; /* port to listen on */
-    int timeout;
-
     /* SIGINT Graceful Exit Handler*/
     signal(SIGINT, sigint_handler);
 
+    /* Is timeout optional?*/
     if (argc != 3)
     {
         fprintf(stderr, "usage: %s <port> <timeout>\n", argv[0]);
