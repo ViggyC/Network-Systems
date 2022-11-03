@@ -236,7 +236,7 @@ int relay(int client, void *client_args, char *buf)
     bzero(IP, sizeof(IP));
     int n;
     FILE *cache_fd;
-    ssize_t payload_size;
+    ssize_t content_length_size;
 
     printf("Get host by name: %s\n", client_request->hostname);
     server = gethostbyname(client_request->hostname);
@@ -349,37 +349,50 @@ int relay(int client, void *client_args, char *buf)
         char *content_length = strstr(httpResponseHeader, "Content-Length: ");
         char *length = strstr(content_length, " ");
         length = length + 1;
-        payload_size = atoi(length);
+        content_length_size = atoi(length);
     }
 
-    printf("Full payload size: %lu\n", payload_size);
-    char header_overflow[BUFSIZE];
-    bzero(header_overflow, sizeof(header_overflow));
-    strcpy(header_overflow, buf);
-    char *check = strstr(header_overflow, "\r\n\r\n");
-    size_t send_size;
-    send_size = sizeof(check);
-    printf("size of partial payload: %lu\n", sizeof(header_overflow));
-    printf("payload: %s\n", check);
-
+    printf("Content length: %lu\n", content_length_size);
+    char *header_overflow = buf;
+    char *check = strstr(buf, "\r\n\r\n");
     check = check + 4;
+
+    int header_length = check - header_overflow;
+    int left_to_read;
+    printf("Header length: %d\n", header_length);
     printf("payload: %s\n", check);
 
-    fwrite(check, send_size, 1, cache_fd);
+    int bytes_written;
+    int payload_bytes_recevied;
 
-    // while ((bytes_read = recv(connfd, buf, BUFSIZE, 0) > 0))
-    // {
-
-    //     printf("bytes_read: %d\n", bytes_read);
-
-    //     // need to also store in cache
-    //     printf("HTTP response:\n%s", buf);
-    //     // send(client, buf, store, 0); => I will just call send_from_cache after storing payload in cache
-    //     int bytes_written = fwrite(buf, 1, bytes_read, cache_fd);
-    //     // reset buf for next read
-    //     printf("wrote %d bytes\n", bytes_written);
-    //     memset(buf, 0, BUFSIZE);
-    // }
+    /* We have the full payload in the buffer!!*/
+    if (BUFSIZE - header_length > content_length_size)
+    {
+        // we have the full payload, check is the full payload
+        bytes_written = fwrite(check, content_length_size, 1, cache_fd);
+        printf("Full payload: wrote %d bytes\n", bytes_written);
+    }
+    else
+    {
+        /* Still write what we have*/
+        payload_bytes_recevied = BUFSIZE - header_length;
+        bytes_written = fwrite(check, payload_bytes_recevied, 1, cache_fd);
+        printf("Partial payload: wrote %d bytes\n", bytes_written);
+        /* We need to keep reading*/
+        left_to_read = content_length_size - payload_bytes_recevied;
+        printf("left to read %d bytes more bytes\n", left_to_read);
+        int total_read = 0;
+        while (total_read < left_to_read)
+        {
+            memset(buf, 0, BUFSIZE);
+            bytes_read = recv(connfd, buf, BUFSIZE, 0);
+            printf("bytes read: %d\n", bytes_read);
+            total_read += bytes_read;
+            char *remainder = buf;
+            printf("Test\n");
+            bytes_written = fwrite(remainder, bytes_read, 1, cache_fd);
+        }
+    }
 
     fclose(cache_fd);
 
@@ -390,8 +403,6 @@ int relay(int client, void *client_args, char *buf)
     //     send(client, buf, n, 0); // send data to output socket
     //     bzero(buf, sizeof(buf));
     // }
-    while (1)
-        ;
 
     return 0;
 }
@@ -451,6 +462,7 @@ int send_from_cache(int client, void *client_args)
     strcat(relative_path, client_request->hash);
 
     printf("sending from cache: %s\n", relative_path);
+
     fp = fopen(relative_path, "rb");
 
     /* This shouldn't happen but check anyways*/
@@ -473,12 +485,16 @@ int send_from_cache(int client, void *client_args)
         NotFound(client, client_request);
         exit(1);
     }
+
     getContentType(http_response.contentType, file_extention);
     // printf("Reponse Content Type: %s\n", http_response.contentType);
 
     /* Generate actual payload to send with header status*/
+    // printf("hi?\n");
     char payload[fsize];
+    bzero(payload, fsize);
     fread(payload, 1, fsize, fp);
+    // printf("Bus error?\n");
 
     /* Graceful exit check?*/
     if (check == 0)
@@ -509,6 +525,7 @@ int send_from_cache(int client, void *client_args)
     memcpy(full_response + strlen(full_response), payload, fsize);
     /* AND we got it! */
     /* the child processes will all be sending to different {client} addresses, per parent accept() */
+
     send(client, full_response, sizeof(full_response), 0);
     // printf("Full response size : %lu\n", sizeof(full_response));
 
@@ -520,6 +537,7 @@ int send_from_cache(int client, void *client_args)
         exit(0);
     }
 
+    printf("Sent from cache\n");
     return 0;
 }
 
@@ -710,11 +728,12 @@ void *parse_request(void *socket_desc)
         /* Not in cache so lets forward to the server!*/
         relay(sock, &client_request, buf);
         /* What I could do here is just store the payload in the cache and then call send from cache immediately after*/
+        printf("returnong from relay\n");
         send_from_cache(sock, &client_request);
+        printf("returnong from send_from_cache\n");
     }
     else if (cache_result == CACHED)
     {
-        // printf("Sending from cache\n");
         send_from_cache(sock, &client_request);
     }
 
@@ -723,7 +742,8 @@ void *parse_request(void *socket_desc)
     /* Move this in relay() ??*/
     // int handle = service_request(client, &client_request);
     free(socket_desc);
-    close(sock);
+    // close(sock);
+    printf("Done!!!\n");
     return NULL;
 }
 

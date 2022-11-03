@@ -297,6 +297,7 @@ int service_request(int client, void *client_args)
         NotFound(client, client_request);
         return 0;
     }
+
     getContentType(http_response.contentType, file_extention);
     // printf("Reponse Content Type: %s\n", http_response.contentType);
 
@@ -330,7 +331,7 @@ int service_request(int client, void *client_args)
     // sprintf(response_header, "%s 200 OK\r\nContent-Type:%s\r\nContent-Length:%ld\r\n\r\n", http_response.version, http_response.contentType, fsize);
 
     // printf("RESPONSE: \n");
-    printf("%s\n", response_header);
+    // printf("%s\n", response_header);
     /* Now attach the payload*/
     char full_response[fsize + strlen(response_header)];
     strcpy(full_response, response_header);
@@ -338,6 +339,10 @@ int service_request(int client, void *client_args)
     memcpy(full_response + strlen(full_response), payload, fsize);
     /* AND we got it! */
     /* the child processes will all be sending to different {client} addresses, per parent accept() */
+    printf("%s\n", full_response);
+
+    printf("size of full response: %lu\n", sizeof(full_response));
+
     send(client, full_response, sizeof(full_response), 0);
     // printf("Full response size : %lu\n", sizeof(full_response));
 
