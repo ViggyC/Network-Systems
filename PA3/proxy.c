@@ -236,6 +236,7 @@ int relay(int client, void *client_args, char *buf)
     bzero(IP, sizeof(IP));
     int n;
     FILE *cache_fd;
+    ssize_t payload_size;
 
     printf("Get host by name: %s\n", client_request->hostname);
     server = gethostbyname(client_request->hostname);
@@ -287,58 +288,99 @@ int relay(int client, void *client_args, char *buf)
         exit(0);
     }
 
+    int port;
+    if (client_request->portNo == NULL)
+    {
+        port = 80;
+    }
+    else
+    {
+        port = atoi(client_request->portNo);
+    }
+
+    printf("Port is %d\n", port);
+
     bzero((char *)&httpserver, sizeof(httpserver));
     httpserver.sin_family = AF_INET;
     httpserver.sin_addr.s_addr = inet_addr(IP);
-    httpserver.sin_port = htons(80); // assuming port 80 for now
+    httpserver.sin_port = htons(port); // assuming port 80 for now
 
     /* Now we can make a connection to the resolved host*/
     int connection_status = connect(connfd, (struct sockaddr *)&httpserver, sizeof(httpserver));
     if (connection_status == -1)
     {
         printf("Connection failed\n");
+        exit(1);
     }
 
     /* Now we relay the client request to the server*/
     memset(buf, 0, BUFSIZE);
-    sprintf(buf, "GET /%s %s\r\nHost: %s\r\n\r\n", client_request->file, client_request->version, client_request->hostname);
+    sprintf(buf, "GET /%s %s\r\nHost: %s\r\nConnection: %s\r\n\r\n", client_request->file, client_request->version, client_request->hostname, client_request->connection);
     printf("Forwarding request:\n%s\n", buf);
 
     /*need to check this!*/
     int bytes_sent = send(connfd, buf, strlen(buf), 0);
     // printf("bytes sent: %d\n", bytes_sent);
-    memset(buf, 0, BUFSIZE);
-
     /*This is where we store file in cache*/
     /* We can also send it to the client at the same time!*/
-    int store;
+    int bytes_read;
+    memset(buf, 0, BUFSIZE);
     char cache_file[strlen("cache/") + strlen(client_request->hash)]; // Buffer to store relative directory of file in cache
     strcpy(cache_file, "cache/");
     strcat(cache_file, client_request->hash);
+
     cache_fd = fopen(cache_file, "wb");
 
-    /* this loop is not exiting*/
-    /* need a different condition? carriage return?*/
-    while ((store = recv(connfd, buf, BUFSIZE, 0)) >= 0)
-    {
-        printf("store: %d\n", store);
-        if (store < 0)
-        {
-            printf("ERROR in recvfrom\n");
-            break;
-        }
+    /* Need to seperate http reponse header and payload*/
+    char httpResponseHeader[BUFSIZE];
+    bzero(httpResponseHeader, sizeof(httpResponseHeader));
+    /* Ok this is the hard part*/
+    /* I only want to store the payload*/
+    /* First get the header*/
+    // while we have not found our clrf
 
-        // need to also store in cache
-        //  fprintf(fp, "%s", buf);
-        printf("buf: %s", buf);
-        send(client, buf, store, 0);
-        int bytes_written = fwrite(buf, 1, store, cache_fd);
-        // reset buf for next read
-        printf("wrote %d bytes\n", bytes_written);
-        memset(buf, 0, BUFSIZE);
+    /* GETTING SERVER RESPONSE*/
+    bytes_read = recv(connfd, buf, BUFSIZE, 0);
+    strcpy(httpResponseHeader, buf);
+    /* Now we have the header and some of the payload: or all of the payload*/
+
+    if (strstr(httpResponseHeader, "Content-Length:") != NULL)
+    {
+        char *content_length = strstr(httpResponseHeader, "Content-Length: ");
+        char *length = strstr(content_length, " ");
+        length = length + 1;
+        payload_size = atoi(length);
     }
 
-    printf("out here\n");
+    printf("Full payload size: %lu\n", payload_size);
+    char header_overflow[BUFSIZE];
+    bzero(header_overflow, sizeof(header_overflow));
+    strcpy(header_overflow, buf);
+    char *check = strstr(header_overflow, "\r\n\r\n");
+    size_t send_size;
+    send_size = sizeof(check);
+    printf("size of partial payload: %lu\n", sizeof(header_overflow));
+    printf("payload: %s\n", check);
+
+    check = check + 4;
+    printf("payload: %s\n", check);
+
+    fwrite(check, send_size, 1, cache_fd);
+
+    // while ((bytes_read = recv(connfd, buf, BUFSIZE, 0) > 0))
+    // {
+
+    //     printf("bytes_read: %d\n", bytes_read);
+
+    //     // need to also store in cache
+    //     printf("HTTP response:\n%s", buf);
+    //     // send(client, buf, store, 0); => I will just call send_from_cache after storing payload in cache
+    //     int bytes_written = fwrite(buf, 1, bytes_read, cache_fd);
+    //     // reset buf for next read
+    //     printf("wrote %d bytes\n", bytes_written);
+    //     memset(buf, 0, BUFSIZE);
+    // }
+
     fclose(cache_fd);
 
     // /* So now we have sent the clients request to the resolved host, now we can get its response*/
@@ -348,6 +390,8 @@ int relay(int client, void *client_args, char *buf)
     //     send(client, buf, n, 0); // send data to output socket
     //     bzero(buf, sizeof(buf));
     // }
+    while (1)
+        ;
 
     return 0;
 }
@@ -406,7 +450,7 @@ int send_from_cache(int client, void *client_args)
     strcat(relative_path, "cache/");
     strcat(relative_path, client_request->hash);
 
-    printf("relative path: %s\n", relative_path);
+    printf("sending from cache: %s\n", relative_path);
     fp = fopen(relative_path, "rb");
 
     /* This shouldn't happen but check anyways*/
@@ -430,7 +474,7 @@ int send_from_cache(int client, void *client_args)
         exit(1);
     }
     getContentType(http_response.contentType, file_extention);
-    printf("Reponse Content Type: %s\n", http_response.contentType);
+    // printf("Reponse Content Type: %s\n", http_response.contentType);
 
     /* Generate actual payload to send with header status*/
     char payload[fsize];
@@ -456,7 +500,7 @@ int send_from_cache(int client, void *client_args)
         sprintf(response_header, "%s 200 OK\r\nContent-Type: %s\r\nContent-Length: %ld\r\nConnection: %s\r\n\r\n", http_response.version, http_response.contentType, fsize, http_response.connection);
     }
 
-    // printf("RESPONSE: \n");
+    /* This is the header that our proxy generates: same as PA2*/
     printf("%s\n", response_header);
     /* Now attach the payload*/
     char full_response[fsize + strlen(response_header)];
@@ -521,9 +565,12 @@ void *parse_request(void *socket_desc)
 
     // You can do this right after a gethostbyname() call as this will return an IP address only for valid hostnames.
 
-    char *host = strstr(host_buf, "Host: ");
-    strtok(host, " ");
+    /* Parsing the Host: header*/
+    char *domain = strstr(host_buf, "Host: ");
+    strtok(domain, " ");
     client_request.hostname = strtok(NULL, "\r\n");
+    /* If a port is included, we dont want to include it in DNS resolution that is done in relay()*/
+    char *host = strtok(client_request.hostname, ":");
 
     char *connection_type = strstr(conn_buf, "Connection: ");
     strtok(connection_type, " ");
@@ -613,18 +660,29 @@ void *parse_request(void *socket_desc)
     char *file = strchr(client_request.URI, '/');
     if (file == NULL || *(file + 1) == '\0')
     {
-        printf("Client requesting index.html\n");
         client_request.file = "index.html";
+        printf("Client requesting %s\n", client_request.file);
     }
     else
     {
         client_request.file = file + 1;
+        printf("Client requesting %s\n", client_request.file);
+    }
+
+    char *port = strstr(client_request.URI, ":");
+    if (port != NULL)
+    {
+        port = port + 1;
+        char *token = strtok(port, "/");
+        printf("Token:%s\n", token);
+        client_request.portNo = token;
     }
 
     printf("REQUEST method: %s\n", client_request.method);
     printf("REQUEST URI: %s\n", client_request.URI);
     printf("REQUEST version: %s\n", client_request.version);
     printf("REQUEST host: %s\n", client_request.hostname);
+    printf("REQUEST port: %s\n", client_request.portNo);
     printf("REQUEST connection: %s\n", client_request.connection);
     printf("REQUEST file: %s\n", client_request.file);
     printf("\n\n");
@@ -649,7 +707,10 @@ void *parse_request(void *socket_desc)
     /* this will return NOT_CACHED if its not in the cache directory our the timeout hit*/
     if (cache_result == NOT_CACHED)
     {
+        /* Not in cache so lets forward to the server!*/
         relay(sock, &client_request, buf);
+        /* What I could do here is just store the payload in the cache and then call send from cache immediately after*/
+        send_from_cache(sock, &client_request);
     }
     else if (cache_result == CACHED)
     {

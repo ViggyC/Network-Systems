@@ -9,6 +9,13 @@ https://www.torproject.org/
 (echo -en "GET http://www.torproject.org/ HTTP/1.1\r\nHost: www.torproject.org\r\n\r\n")  | nc localhost 8000
 
 
+(echo -en "GET http://localhost:5556/ HTTP/1.1\r\nHost: localhost\r\n\r\n")  | nc localhost 8000
+
+(echo -en "GET http://localhost:5556/ HTTP/1.1\r\nHost: localhost\r\n\r\n")  | nc localhost 8000
+
+(echo -en "GET http://localhost:5556/graphics/tip.gif HTTP/1.1\r\nHost: localhost:5556\r\nConnection: close\r\n\r\n")  | nc localhost 8000
+
+(echo -en "GET http://localhost:5556/images/wine3.jpg HTTP/1.1\r\nHost: localhost:5556\r\nConnection: close\r\n\r\n")  | nc localhost 8000
 
 
 
