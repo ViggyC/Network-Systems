@@ -32,6 +32,9 @@ int sockfd;  /* server socket file descriptor*/
 int check;   /*global flag for children to terminate on graceful exit*/
 int timeout; /* global timeout value*/
 
+pthread_mutex_t file_lock;
+pthread_mutex_t cache_lock;
+
 /*https://www.stackpath.com/edge-academy/what-is-keep-alive/#:~:text=Overview,connection%20header%20can%20be%20used.*/
 
 /* Major note: all http response headers end in: \r\n\r\n */
@@ -585,7 +588,7 @@ int send_from_cache(int client, void *client_args)
     {
         // printf("Closing client connection....\n");
         close(client);
-        pthread_exit(0); //?
+        return 0;
     }
 
     return 0;
@@ -779,6 +782,7 @@ int parse_request(int sock, char *buf)
     return 0;
 }
 
+/*********THREAD ENTRY ROUTINE**********/
 void *received_request(void *socket_desc)
 {
     pthread_detach(pthread_self());
@@ -823,8 +827,8 @@ void *received_request(void *socket_desc)
     printf("%s\n", timeout);
     free(socket_desc);
     close(sock);
-    exit(0);
     printf("Done!!!\n");
+    // return from entry point routine
     return NULL;
 }
 
