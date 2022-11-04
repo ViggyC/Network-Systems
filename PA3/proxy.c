@@ -1,9 +1,11 @@
 /*
     PA3 Network Systems
-    HTTP Cache Proxy
+    HTTP Web Caching Proxy
+
+    An extension of PA2: HTTP Web Server
 
     Author: Vignesh Chandrasekhar
-    Collaborators: Freddy Perez and James Vogenthaler
+    Collaborators: Freddy Perez and Cameron Brown
 */
 
 #include <stdio.h>
@@ -34,6 +36,7 @@ int timeout; /* global timeout value*/
 
 pthread_mutex_t file_lock;
 pthread_mutex_t cache_lock;
+pthread_mutex_t exit_lock;
 
 /*https://www.stackpath.com/edge-academy/what-is-keep-alive/#:~:text=Overview,connection%20header%20can%20be%20used.*/
 
@@ -101,8 +104,10 @@ void sigint_handler(int sig)
 {
 
     /* Closes global listening sock*/
+    pthread_mutex_lock(&exit_lock);
     close(sockfd);
     check = 0;
+    pthread_mutex_unlock(&exit_lock);
 }
 
 /* If quering the cache*/
@@ -850,6 +855,20 @@ int main(int argc, char **argv)
     int portno; /* port to listen on */
     /* SIGINT Graceful Exit Handler*/
     signal(SIGINT, sigint_handler);
+
+    if (pthread_mutex_init(&cache_lock, NULL) != 0)
+    {
+        exit(1);
+    }
+    if (pthread_mutex_init(&file_lock, NULL) != 0)
+    {
+        exit(1);
+    }
+
+    if (pthread_mutex_init(&exit_lock, NULL) != 0)
+    {
+        exit(1);
+    }
 
     /* Is timeout optional?*/
     if (argc != 3)
