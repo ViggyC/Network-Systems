@@ -58,10 +58,13 @@ typedef struct
     char *connection;
     char *hostname; // if included in request header
     char *ip;
+    char *domain;
     char *file;
     char *portNo;
     char *messageBody;
     char *hash;
+    int blocklist;
+    int keepalive;
 } HTTP_REQUEST;
 
 typedef struct
@@ -143,7 +146,7 @@ int getContentType(char *contentType, char *fileExtension)
 }
 
 /********************************** Invalid Requests****************************************/
-int NotFound(int client, void *client_args)
+void *NotFound(int client, void *client_args)
 {
     /* what should this response actually look like*/
     HTTP_REQUEST *client_request = (HTTP_REQUEST *)client_args;
@@ -151,26 +154,36 @@ int NotFound(int client, void *client_args)
     char Not_Found[BUFSIZE];
     bzero(Not_Found, sizeof(Not_Found));
     /* review this method of sending to the client*/
-    sprintf(Not_Found, "%s 404 Not Found\r\nContent-Type: text/plain\r\nContent-Length: 0\r\n\r\n", client_request->version);
+    sprintf(Not_Found, "%s 404 Not Found\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: %s\r\n\r\n", client_request->version, client_request->connection);
     printf("%s\n", Not_Found);
     send(client, Not_Found, sizeof(Not_Found), 0);
-    exit(0);
+    if (strcmp(client_request->connection, "close") == 0)
+    {
+        close(client);
+        return NULL;
+    }
+    return NULL;
 }
 
-int BadRequest(int client, void *client_args)
+void *BadRequest(int client, void *client_args)
 {
     char BAD_REQUEST[BUFSIZE];
     bzero(BAD_REQUEST, sizeof(BAD_REQUEST));
     HTTP_REQUEST *client_request = (HTTP_REQUEST *)client_args;
     // snprintf(response);
     /* connection header?*/
-    sprintf(BAD_REQUEST, "HTTP/1.0 400 Bad Request\r\nContent-Type: text/plain\r\nContent-Length: 0\r\n\r\n");
+    sprintf(BAD_REQUEST, "HTTP/1.0 400 Bad Request\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: %s\r\n\r\n", client_request->connection);
     printf("%s\n", BAD_REQUEST);
     send(client, BAD_REQUEST, sizeof(BAD_REQUEST), 0);
-    exit(0);
+    if (strcmp(client_request->connection, "close") == 0)
+    {
+        close(client);
+        return NULL;
+    }
+    return NULL;
 }
 
-int MethodNotAllowed(int client, void *client_args)
+void *MethodNotAllowed(int client, void *client_args)
 {
     /* what headers should I include*/
     char response[BUFSIZE];
@@ -179,26 +192,32 @@ int MethodNotAllowed(int client, void *client_args)
     sprintf(response, "%s 405 Method Not Allowed\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: %s\r\n\r\n", client_request->version, client_request->connection);
     printf("%s\n", response);
     send(client, response, sizeof(response), 0);
-    exit(0);
+    if (strcmp(client_request->connection, "close") == 0)
+    {
+        close(client);
+        return NULL;
+    }
+    return NULL;
 }
 
-int Forbidden(int client, void *client_args)
+void *Forbidden(int client, void *client_args)
 {
     /* what headers should I include*/
     char response[BUFSIZE];
     bzero(response, sizeof(response));
     HTTP_REQUEST *client_request = (HTTP_REQUEST *)client_args;
-    sprintf(response, "%s 403 Forbidden\r\nContent-Type: text/plain\r\nContent-Length: 0\r\n\r\n", client_request->version);
+    sprintf(response, "%s 403 Forbidden\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: %s\r\n\r\n", client_request->version, client_request->connection);
     printf("%s\n", response);
     send(client, response, sizeof(response), 0);
     if (strcmp(client_request->connection, "close") == 0)
     {
         close(client);
+        return NULL;
     }
-    return 0;
+    return NULL;
 }
 
-int HTTPVersionNotSupported(int client, void *client_args)
+void *HTTPVersionNotSupported(int client, void *client_args)
 {
     char response[BUFSIZE];
     bzero(response, sizeof(response));
@@ -206,7 +225,12 @@ int HTTPVersionNotSupported(int client, void *client_args)
     sprintf(response, "HTTP/1.0 505 HTTP Version Not Supported\r\nContent-Type: text/plain\r\nContent-Length: 0\r\n\r\n");
     printf("%s\n", response);
     send(client, response, sizeof(response), 0);
-    exit(0);
+    if (strcmp(client_request->connection, "close") == 0)
+    {
+        close(client);
+        return NULL;
+    }
+    return NULL; //?
 }
 
 int isDirectory(const char *path)
@@ -276,11 +300,13 @@ int relay(int client, void *client_args, char *buf)
         if ((hostname[0] != '\n'))
         {
             hostname[strlen(hostname) - 1] = '\0';
-            if (strcmp(client_request->ip, hostname) == 0)
+            if (strcmp(client_request->ip, hostname) == 0 || strcmp(client_request->hostname, hostname) == 0)
             {
                 /*This domain has been blocked*/
                 printf("%s is blocked\n", hostname);
-                Forbidden(client, &client_request);
+                // Forbidden(client, &client_request);
+                client_request->blocklist = 1;
+                return 0;
             }
         }
     }
@@ -396,6 +422,7 @@ int relay(int client, void *client_args, char *buf)
             char *remainder = buf;
             // printf("Test\n");
             bytes_written = fwrite(remainder, bytes_read, 1, cache_fd);
+            printf("Partial wrote %d bytes\n", bytes_written);
         }
     }
 
@@ -558,10 +585,9 @@ int send_from_cache(int client, void *client_args)
     {
         // printf("Closing client connection....\n");
         close(client);
-        exit(0);
+        pthread_exit(0); //?
     }
 
-    printf("Sent from cache\n");
     return 0;
 }
 
@@ -577,24 +603,24 @@ Workflow:
 5. Else just send from the cache
 
 */
-void *parse_request(void *socket_desc)
+int parse_request(int sock, char *buf)
 {
 
     pthread_detach(pthread_self());
-
-    int n;
+    HTTP_REQUEST client_request;
+    // int n;
     /* This is the client socket*/
-    int sock = *(int *)socket_desc;
-    char buf[BUFSIZE];
-    memset(buf, 0, BUFSIZE);
+    // int sock = *(int *)socket_desc;
+    // char buf[BUFSIZE];
+    // memset(buf, 0, BUFSIZE);
 
     /* Add a loop for keep alive*/
-    n = recv(sock, buf, BUFSIZE, 0);
+    // n = recv(sock, buf, BUFSIZE, 0);
+    /* KEEP ALIVE BABY*/
+    // n = recv(sock, buf, BUFSIZE, 0);
 
     printf("Client request:\n%s\n", buf);
-
     /*Parse client request*/
-    HTTP_REQUEST client_request;
     char temp_buf[BUFSIZE];
     char conn_buf[BUFSIZE];
     char host_buf[BUFSIZE];
@@ -605,12 +631,11 @@ void *parse_request(void *socket_desc)
     client_request.URI = strtok(NULL, " ");        // route/URI - relative path
     client_request.version = strtok(NULL, "\r\n"); // version, end in \r
 
-    // You can do this right after a gethostbyname() call as this will return an IP address only for valid hostnames.
-
     /* Parsing the Host: header*/
     char *domain = strstr(host_buf, "Host: ");
     strtok(domain, " ");
     client_request.hostname = strtok(NULL, "\r\n");
+
     /* If a port is included, we dont want to include it in DNS resolution that is done in relay()*/
     char *host = strtok(client_request.hostname, ":");
 
@@ -618,10 +643,13 @@ void *parse_request(void *socket_desc)
     strtok(connection_type, " ");
     client_request.connection = strtok(NULL, "\r\n");
 
+    /* null terminating for safety*/
+    client_request.method[strlen(client_request.method)] = '\0';
+    client_request.version[strlen(client_request.version)] = '\0';
+
     /*This sleep is a debugging method to see the children during the graceful exit*/
     // sleep(3);
     // printf("Children slept for 5 ms\n");
-
     if (client_request.method == NULL || client_request.URI == NULL || client_request.version == NULL)
     {
         // bad request?
@@ -629,43 +657,38 @@ void *parse_request(void *socket_desc)
         BadRequest(sock, &client_request);
         return 0;
     }
-
-    /*Keep alive implementation*/
     if (strcmp(client_request.version, "HTTP/1.1") == 0 && client_request.connection == NULL)
     {
         client_request.connection = "keep-alive";
+        client_request.keepalive = 1;
         // printf("REQUEST connection: %s\n\n", client_request.connection);
     }
-
     if (strcmp(client_request.version, "HTTP/1.0") == 0 && client_request.connection == NULL)
     {
         client_request.connection = "close";
+        client_request.keepalive = 0; // initialized to keep alive
         // printf("REQUEST connection: %s\n\n", client_request.connection);
     }
-
     if (strcmp(client_request.method, "GET") != 0)
     {
         /* Bad request according to writeup*/
         BadRequest(sock, &client_request);
         return 0;
     }
-
     if (strcmp(client_request.version, "HTTP/1.1") == 0 || strcmp(client_request.version, "HTTP/1.0") == 0)
     {
         // do nothing
     }
     else
     {
-        printf("Invalid HTTP version\n");
+        // printf("Invalid HTTP version\n");
+        client_request.connection = "keep-alive";
         HTTPVersionNotSupported(sock, &client_request);
         return 0;
     }
 
-    /* null terminating for safety*/
-    client_request.method[strlen(client_request.method)] = '\0';
-    client_request.version[strlen(client_request.version)] = '\0';
-
-    /*********************************************PARSING**********************************************/
+    /**********************PARSING AFTER ERROR HANDLING***************************/
+    /**********************This is a successful request***************************/
     // need to extract origin server from complete URI
     // this will cut out http://
     // ex: http://www.example.com/testing.txt =>www.example.com/testing.txt
@@ -708,29 +731,6 @@ void *parse_request(void *socket_desc)
     printf("REQUEST file: %s\n", client_request.file);
     printf("\n\n");
 
-    /*Blocklist*/
-    FILE *bl = fopen("./blocklist", "r");
-    char hostname[254];
-    while (fgets(hostname, sizeof(hostname), bl))
-    {
-        // printf("%s\n", hostname);
-        if ((hostname[0] != '\n'))
-        {
-            hostname[strlen(hostname) - 1] = '\0';
-
-            if (strcmp(client_request.hostname, hostname) == 0)
-            {
-                /*This domain has been blocked*/
-                printf("%s is blocked\n", hostname);
-                Forbidden(sock, &client_request);
-                printf("returned from forbidden\n");
-                exit(0); //?
-            }
-        }
-    }
-    fclose(bl);
-    /* end of blocklist*/
-
     /* generate hash: all we need is the hostname and the filename*/
     char hash_input[strlen(client_request.hostname) + strlen(client_request.file) + 1];
     bzero(hash_input, sizeof(hash_input));
@@ -753,17 +753,77 @@ void *parse_request(void *socket_desc)
     {
         /* Not in cache so lets forward to the server!*/
         relay(sock, &client_request, buf);
-        /* What I could do here is just store the payload in the cache and then call send from cache immediately after*/
-        printf("File has been cached..... now sending it from cache\n");
-        send_from_cache(sock, &client_request);
-        printf("sent from cache\n");
+        if (client_request.blocklist == 1)
+        {
+            Forbidden(sock, &client_request);
+            // return back to received_request()
+            client_request.blocklist = 0;
+            return 0;
+        }
+        else
+        {
+            /* What I could do here is just store the payload in the cache and then call send from cache immediately after*/
+            printf("File has been cached..... now sending it from cache\n");
+            send_from_cache(sock, &client_request);
+            printf("sent from cache\n");
+        }
     }
     else if (cache_result == CACHED)
     {
         send_from_cache(sock, &client_request);
     }
 
+    // free(socket_desc);
+    // printf("Done!!!\n");
+    // return NULL;
+    return 0;
+}
+
+void *received_request(void *socket_desc)
+{
+    pthread_detach(pthread_self());
+    int sock = *(int *)socket_desc;
+    char buf[BUFSIZE];
+    memset(buf, 0, BUFSIZE);
+    int n;
+
+    struct timeval tv;
+    tv.tv_sec = 10;
+    tv.tv_usec = 0;
+    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
+    {
+        perror("Error in socket timeout setting: ");
+    }
+
+    /* KEEP ALIVE BABY*/
+    while ((n = recv(sock, buf, BUFSIZE, 0)) > 0)
+    {
+
+        /* reset timeout value*/
+        tv.tv_sec = 10;
+        tv.tv_usec = 0;
+        if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
+        {
+            perror("Error in socket timeout setting: ");
+        }
+
+        int handle_result = parse_request(sock, buf);
+        memset(buf, 0, BUFSIZE);
+    }
+
+    /*10 seconds have passed so we timeout*/
+    char timeout[BUFSIZE];
+    bzero(timeout, sizeof(timeout));
+    // printf("client that closed: %d\n", client_socket);
+    sprintf(timeout, "HTTP/1.1 408 Request Timeout\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+    /* This will only send in the case of a timout,
+    if the server closes the socket on behalf of the client,
+    then this will never send because the client already exited*/
+    send(sock, timeout, sizeof(timeout), 0);
+    printf("%s\n", timeout);
     free(socket_desc);
+    close(sock);
+    exit(0);
     printf("Done!!!\n");
     return NULL;
 }
@@ -847,7 +907,7 @@ int main(int argc, char **argv)
 
         new_sock = malloc(1);
         *new_sock = client_socket;
-        if (pthread_create(&sniffer_thread, NULL, parse_request, (void *)new_sock) < 0)
+        if (pthread_create(&sniffer_thread, NULL, received_request, (void *)new_sock) < 0)
         {
             perror("could not create thread");
             return 1;
@@ -856,16 +916,7 @@ int main(int argc, char **argv)
     /*Accept returns -1 when signal handler closes the socket, so we sleep and let the children finish*/
     // printf("sleeping...\n");
     // /*10 second wait for children to finish before parent exits: CJ/mason office hours*/
-    // sleep(10);
     printf("Gracefully exiting...\n");
-    /*waiting for child processes to finish*/
-    pid_t child_p;
-    while ((child_p = wait(NULL)) > 0)
-    {
-        // printf("waiting on: %d\n", child_p);
-    }
-
-    printf("Done\n");
-    // close(sockfd);
-    return 0;
+    sleep(10);
+    exit(0);
 }
