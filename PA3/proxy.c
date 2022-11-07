@@ -261,6 +261,8 @@ void md5_generator(char *original, char *md5_hash)
 }
 
 /* If requested file is not in cache, ping the server for it*/
+/* This function does not send anything to the client*/
+/* It just stores the payload in the cache and then returns and then the program will send from cache like PA2*/
 int relay(int client, void *client_args, char *buf)
 {
     HTTP_REQUEST *client_request = (HTTP_REQUEST *)client_args;
@@ -413,7 +415,6 @@ int relay(int client, void *client_args, char *buf)
             // we have the full payload, check is the full payload
             bytes_written = fwrite(check, 1, content_length_size, cache_fd);
             printf("Full payload: wrote %d bytes\n", bytes_written);
-            memset(buf, 0, BUFSIZE);
         }
         else
         {
@@ -429,13 +430,10 @@ int relay(int client, void *client_args, char *buf)
             {
                 memset(buf, 0, BUFSIZE);
                 bytes_read = recv(connfd, buf, BUFSIZE, 0);
-                printf("Stack smash\n");
-                printf("bytes read: %d\n", bytes_read);
+                printf("read: %d\n", bytes_read);
                 total_read += bytes_read;
-                // char *remainder = buf;
-                //  printf("Test\n");
                 bytes_written = fwrite(buf, 1, bytes_read, cache_fd);
-                printf("Partial wrote %d bytes\n", bytes_written);
+                printf("wrote %d bytes\n", bytes_written);
             }
         }
     }
@@ -664,7 +662,7 @@ int parse_request(int sock, char *buf)
 
     /*This sleep is a debugging method to see the children during the graceful exit*/
     // sleep(3);
-    // printf("Children slept for 5 ms\n");
+
     if (client_request.method == NULL || client_request.URI == NULL || client_request.version == NULL)
     {
         // bad request?
@@ -733,7 +731,7 @@ int parse_request(int sock, char *buf)
     {
         port = port + 1;
         char *token = strtok(port, "/");
-        printf("Token:%s\n", token);
+        // printf("Token:%s\n", token);
         client_request.portNo = token;
     }
 
@@ -798,7 +796,6 @@ int parse_request(int sock, char *buf)
 void *received_request(void *socket_desc)
 {
     pthread_detach(pthread_self());
-
     int sock = *(int *)socket_desc;
     char buf[BUFSIZE];
     memset(buf, 0, BUFSIZE);
@@ -928,6 +925,7 @@ int main(int argc, char **argv)
     mkdir("cache", 0777);
 
     /* continously handle client requests */
+    /* spawn a thread for every incomming connection*/
     while ((client_socket = accept(sockfd, (struct sockaddr *)&clientaddr, &clientlen)) > 0)
     {
 

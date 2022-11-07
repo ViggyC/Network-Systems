@@ -1,7 +1,7 @@
 https://www.torproject.org/
-(echo -en "GET http://www.google.com/ HTTP/1.1\r\nHost: www.google.com\r\n\r\n")  | nc localhost 8000
+(echo -en "GET http://www.google.com/ HTTP/1.1\r\nHost: www.google.com\r\n\r\n" ; sleep 2 ; echo -en "GET http://157.240.28.35/ HTTP/1.1\r\nHost: 157.240.28.35\r\n\r\n")  | nc localhost 8888
 157.240.28.35
-(echo -en "GET http://157.240.28.35/ HTTP/1.1\r\nHost: 157.240.28.35\r\n\r\n")  | nc localhost 8000
+(echo -en "GET http://157.240.28.35/ HTTP/1.1\r\nHost: 157.240.28.35\r\n\r\n")  | nc localhost 8888
 
 
 (echo -en "GET http://www.example.com/ HTTP/1.1\r\nHost: example.com\r\n\r\n")  | nc localhost 8000
@@ -25,4 +25,6 @@ https://www.torproject.org/
 
 (echo -en "GET http://157.240.28.35/ HTTP/1.1\r\nHost: 157.240.28.35\r\n\r\n"; sleep 3; echo -en "GET http://localhost:5556/ HTTP/1.1\r\nHost: localhost\r\n\r\n") | nc localhost 8000
 
-(echo -en "GET http://localhost:5556/images/exam.gif HTTP/1.1\r\nHost: localhost:5556\r\n\r\n"; sleep 3; echo -en "GET http://localhost:5556/images/welcome.png HTTP/1.1\r\nHost: localhost\r\n\r\n") | nc localhost 8000
+(echo -en "GET http://localhost:5556/graphics/tip.gif HTTP/1.1\r\nHost: localhost:5556\r\n\r\n"; sleep 3; echo -en "GET http://localhost:5556/images/welcome.png HTTP/1.1\r\nHost: localhost\r\n\r\n") | nc localhost 8888
+
+(echo -en "GET http://localhost:5556/images/exam.gif HTTP/1.1\r\nHost: localhost:5556\r\n\r\n"; sleep 3; echo -en "GET http://localhost:5556/ HTTP/1.1\r\nHost: localhost\r\n\r\n") | nc localhost 8888
