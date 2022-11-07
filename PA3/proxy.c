@@ -104,10 +104,10 @@ void sigint_handler(int sig)
 {
 
     /* Closes global listening sock*/
-    pthread_mutex_lock(&exit_lock);
+    // pthread_mutex_lock(&exit_lock);
     close(sockfd);
     check = 0;
-    pthread_mutex_unlock(&exit_lock);
+    // pthread_mutex_unlock(&exit_lock);
 }
 
 /* If quering the cache*/
@@ -296,7 +296,7 @@ int relay(int client, void *client_args, char *buf)
         // break after first find
         break;
     }
-    printf("%s resolved to %s\n", client_request->hostname, IP);
+    // printf("%s resolved to %s\n", client_request->hostname, IP);
     client_request->ip = IP;
 
     /*Blocklost*/
@@ -337,7 +337,7 @@ int relay(int client, void *client_args, char *buf)
         port = atoi(client_request->portNo);
     }
 
-    printf("Port is %d\n", port);
+    // printf("Port is %d\n", port);
 
     bzero((char *)&httpserver, sizeof(httpserver));
     httpserver.sin_family = AF_INET;
@@ -398,39 +398,45 @@ int relay(int client, void *client_args, char *buf)
 
     int header_length = check - header_overflow;
     int left_to_read;
-    printf("Header length: %d\n", header_length);
-    printf("payload: %s\n", check);
+    // printf("Header length: %d\n", header_length);
+    //  printf("payload: %s\n", check);
 
     int bytes_written;
     int payload_bytes_recevied;
 
     /* We have the full payload in the buffer!!*/
-    if (BUFSIZE - header_length > content_length_size)
+    if (content_length_size != 0)
     {
-        // we have the full payload, check is the full payload
-        bytes_written = fwrite(check, content_length_size, 1, cache_fd);
-        printf("Full payload: wrote %d bytes\n", bytes_written);
-    }
-    else
-    {
-        /* Still write what we have*/
-        payload_bytes_recevied = BUFSIZE - header_length;
-        bytes_written = fwrite(check, payload_bytes_recevied, 1, cache_fd);
-        printf("Partial payload: wrote %d bytes\n", bytes_written);
-        /* We need to keep reading*/
-        left_to_read = content_length_size - payload_bytes_recevied;
-        printf("left to read %d bytes more bytes\n", left_to_read);
-        int total_read = 0;
-        while (total_read < left_to_read)
+
+        if (BUFSIZE - header_length > content_length_size)
         {
+            // we have the full payload, check is the full payload
+            bytes_written = fwrite(check, 1, content_length_size, cache_fd);
+            printf("Full payload: wrote %d bytes\n", bytes_written);
             memset(buf, 0, BUFSIZE);
-            bytes_read = recv(connfd, buf, BUFSIZE, 0);
-            printf("bytes read: %d\n", bytes_read);
-            total_read += bytes_read;
-            char *remainder = buf;
-            // printf("Test\n");
-            bytes_written = fwrite(remainder, bytes_read, 1, cache_fd);
-            printf("Partial wrote %d bytes\n", bytes_written);
+        }
+        else
+        {
+            /* Still write what we have*/
+            payload_bytes_recevied = BUFSIZE - header_length;
+            bytes_written = fwrite(check, 1, payload_bytes_recevied, cache_fd);
+            printf("Partial payload: wrote %d bytes\n", bytes_written);
+            /* We need to keep reading*/
+            left_to_read = content_length_size - payload_bytes_recevied;
+            printf("left to read %d bytes more bytes\n", left_to_read);
+            int total_read = 0;
+            while (total_read < left_to_read)
+            {
+                memset(buf, 0, BUFSIZE);
+                bytes_read = recv(connfd, buf, BUFSIZE, 0);
+                printf("Stack smash\n");
+                printf("bytes read: %d\n", bytes_read);
+                total_read += bytes_read;
+                // char *remainder = buf;
+                //  printf("Test\n");
+                bytes_written = fwrite(buf, 1, bytes_read, cache_fd);
+                printf("Partial wrote %d bytes\n", bytes_written);
+            }
         }
     }
 
@@ -521,7 +527,6 @@ int send_from_cache(int client, void *client_args)
     strcat(relative_path, client_request->hash);
 
     printf("sending from cache: %s\n", relative_path);
-
     fp = fopen(relative_path, "rb");
 
     /* This shouldn't happen but check anyways*/
@@ -529,7 +534,7 @@ int send_from_cache(int client, void *client_args)
     {
         // printf("%s does not exist!\n", relative_path);
         NotFound(client, client_request);
-        exit(0);
+        return 0;
     }
 
     fseek(fp, 0, SEEK_END);
@@ -542,26 +547,28 @@ int send_from_cache(int client, void *client_args)
     if (file_extention == NULL)
     {
         NotFound(client, client_request);
-        exit(1);
+        return 0;
     }
 
     getContentType(http_response.contentType, file_extention);
     // printf("Reponse Content Type: %s\n", http_response.contentType);
 
     /* Generate actual payload to send with header status*/
-    // printf("hi?\n");
     char payload[fsize];
     bzero(payload, fsize);
     fread(payload, 1, fsize, fp);
-    // printf("Bus error?\n");
+    printf("Buffer overflow?\n");
 
     /* Graceful exit check?*/
-    if (check == 0)
-    {
-        // printf("This is the last request\n");
-        bzero(http_response.connection, sizeof(http_response.connection));
-        strcpy(http_response.connection, "close");
-    }
+    // pthread_mutex_lock(&exit_lock);
+    // if (check == 0)
+    // {
+    //     // pthread_mutex_unlock(&exit_lock);
+
+    //     // printf("This is the last request\n");
+    //     bzero(http_response.connection, sizeof(http_response.connection));
+    //     strcpy(http_response.connection, "close");
+    // }
 
     char response_header[BUFSIZE];
     if (strcmp(client_request->connection, "keep-alive") == 0 || strcmp(client_request->connection, "Keep-alive") == 0)
@@ -791,6 +798,7 @@ int parse_request(int sock, char *buf)
 void *received_request(void *socket_desc)
 {
     pthread_detach(pthread_self());
+
     int sock = *(int *)socket_desc;
     char buf[BUFSIZE];
     memset(buf, 0, BUFSIZE);
