@@ -307,7 +307,7 @@ int relay(int client, void *client_args, char *buf)
         // break after first find
         break;
     }
-    // printf("%s resolved to %s\n", client_request->hostname, IP);
+    printf("%s resolved to %s\n", client_request->hostname, IP);
     client_request->ip = IP;
 
     /*Blocklost*/
@@ -446,7 +446,6 @@ int relay(int client, void *client_args, char *buf)
             }
         }
     }
-
     fclose(cache_fd);
     pthread_mutex_unlock(&file_lock);
 
@@ -535,8 +534,8 @@ int send_from_cache(int client, void *client_args)
     strcat(relative_path, client_request->hash);
 
     printf("sending from cache: %s\n", relative_path);
-    fp = fopen(relative_path, "rb");
 
+    fp = fopen(relative_path, "rb");
     /* This shouldn't happen but check anyways*/
     if (fp == NULL)
     {
@@ -562,10 +561,12 @@ int send_from_cache(int client, void *client_args)
     printf("Reponse Content Type: %s\n", http_response.contentType);
 
     /* Generate actual payload to send with header status*/
+    printf("Buffer overflow?\n");
     char payload[fsize];
     bzero(payload, fsize);
     fread(payload, 1, fsize, fp);
-    // printf("Buffer overflow?\n");
+    printf("Buffer overflow?\n");
+    fclose(fp);
 
     /* Graceful exit check?*/
     if (check == 0)
@@ -659,7 +660,7 @@ int parse_request(int sock, char *buf)
     client_request.version[strlen(client_request.version)] = '\0';
 
     /*This sleep is a debugging method to see the children during the graceful exit*/
-    sleep(3);
+    sleep(5);
 
     if (client_request.method == NULL || client_request.URI == NULL || client_request.version == NULL)
     {
