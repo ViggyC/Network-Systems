@@ -105,47 +105,56 @@ void sigint_handler(int sig)
 
     /* Closes global listening sock*/
     // pthread_mutex_lock(&exit_lock);
-    close(sockfd);
+    // close(sockfd);
     check = 0;
     // pthread_mutex_unlock(&exit_lock);
 }
 
+/* https://stackoverflow.com/questions/5309471/getting-file-extension-in-c*/
+const char *get_filename_ext(const char *filename)
+{
+    const char *dot = strrchr(filename, '.');
+    if (!dot || dot == filename)
+        return "";
+    return dot + 1;
+}
+
 /* If quering the cache*/
-int getContentType(char *contentType, char *fileExtension)
+int getContentType(char *contentType, const char *fileExtension)
 {
 
-    if (strcmp(fileExtension, ".html") == 0 || strcmp(fileExtension, ".htm") == 0)
+    if (strcmp(fileExtension, "html") == 0 || strcmp(fileExtension, ".htm") == 0)
     {
         strcpy(contentType, "text/html");
     }
-    else if (strcmp(fileExtension, ".txt") == 0)
+    else if (strcmp(fileExtension, "txt") == 0)
     {
         strcpy(contentType, "text/plain");
     }
-    else if (strcmp(fileExtension, ".png") == 0)
+    else if (strcmp(fileExtension, "png") == 0)
     {
         strcpy(contentType, "img/png");
     }
-    else if (strcmp(fileExtension, ".gif") == 0)
+    else if (strcmp(fileExtension, "gif") == 0)
     {
         strcpy(contentType, "image/gif");
     }
-    else if (strcmp(fileExtension, ".jpg") == 0)
+    else if (strcmp(fileExtension, "jpg") == 0)
     {
         strcpy(contentType, "image/jpg");
     }
 
-    else if (strcmp(fileExtension, ".css") == 0)
+    else if (strcmp(fileExtension, "css") == 0)
     {
         strcpy(contentType, "text/css");
     }
 
-    else if (strcmp(fileExtension, ".js") == 0)
+    else if (strcmp(fileExtension, "js") == 0)
     {
         strcpy(contentType, "application/javascript");
     }
 
-    else if (strcmp(fileExtension, ".ico") == 0)
+    else if (strcmp(fileExtension, "ico") == 0)
     {
         strcpy(contentType, "image/x-icon");
     }
@@ -348,9 +357,9 @@ int relay(int client, void *client_args, char *buf)
 
     /* Now we can make a connection to the resolved host*/
     int connection_status = connect(connfd, (struct sockaddr *)&httpserver, sizeof(httpserver));
-    if (connection_status == -1)
+    if (connection_status != 0)
     {
-        printf("Connection failed\n");
+        printf("Connection failed: %s\n", client_request->hostname);
         exit(1);
     }
 
@@ -369,8 +378,6 @@ int relay(int client, void *client_args, char *buf)
     char cache_file[strlen("cache/") + strlen(client_request->hash)]; // Buffer to store relative directory of file in cache
     strcpy(cache_file, "cache/");
     strcat(cache_file, client_request->hash);
-
-    cache_fd = fopen(cache_file, "wb");
 
     /* Need to seperate http reponse header and payload*/
     char httpResponseHeader[BUFSIZE];
@@ -407,6 +414,8 @@ int relay(int client, void *client_args, char *buf)
     int payload_bytes_recevied;
 
     /* We have the full payload in the buffer!!*/
+    pthread_mutex_lock(&file_lock);
+    cache_fd = fopen(cache_file, "wb");
     if (content_length_size != 0)
     {
 
@@ -439,6 +448,7 @@ int relay(int client, void *client_args, char *buf)
     }
 
     fclose(cache_fd);
+    pthread_mutex_unlock(&file_lock);
 
     // /* So now we have sent the clients request to the resolved host, now we can get its response*/
     // bzero(buf, sizeof(buf));
@@ -540,8 +550,8 @@ int send_from_cache(int client, void *client_args)
     fseek(fp, 0, SEEK_SET);
 
     /* GET CONTENT TYPE!!!!!!*/
-    char *file_extention = strchr(client_request->file, '.');
-    // printf("File extension: %s\n", file_extention);
+    const char *file_extention = get_filename_ext(client_request->file);
+    printf("File extension: %s\n", file_extention);
     if (file_extention == NULL)
     {
         NotFound(client, client_request);
@@ -549,24 +559,22 @@ int send_from_cache(int client, void *client_args)
     }
 
     getContentType(http_response.contentType, file_extention);
-    // printf("Reponse Content Type: %s\n", http_response.contentType);
+    printf("Reponse Content Type: %s\n", http_response.contentType);
 
     /* Generate actual payload to send with header status*/
     char payload[fsize];
     bzero(payload, fsize);
     fread(payload, 1, fsize, fp);
-    printf("Buffer overflow?\n");
+    // printf("Buffer overflow?\n");
 
     /* Graceful exit check?*/
-    // pthread_mutex_lock(&exit_lock);
-    // if (check == 0)
-    // {
-    //     // pthread_mutex_unlock(&exit_lock);
-
-    //     // printf("This is the last request\n");
-    //     bzero(http_response.connection, sizeof(http_response.connection));
-    //     strcpy(http_response.connection, "close");
-    // }
+    if (check == 0)
+    {
+        // printf("This is the last request\n");
+        close(sockfd);
+        bzero(http_response.connection, sizeof(http_response.connection));
+        strcpy(http_response.connection, "close");
+    }
 
     char response_header[BUFSIZE];
     if (strcmp(client_request->connection, "keep-alive") == 0 || strcmp(client_request->connection, "Keep-alive") == 0)
@@ -621,16 +629,6 @@ int parse_request(int sock, char *buf)
 
     pthread_detach(pthread_self());
     HTTP_REQUEST client_request;
-    // int n;
-    /* This is the client socket*/
-    // int sock = *(int *)socket_desc;
-    // char buf[BUFSIZE];
-    // memset(buf, 0, BUFSIZE);
-
-    /* Add a loop for keep alive*/
-    // n = recv(sock, buf, BUFSIZE, 0);
-    /* KEEP ALIVE BABY*/
-    // n = recv(sock, buf, BUFSIZE, 0);
 
     printf("Client request:\n%s\n", buf);
     /*Parse client request*/
@@ -661,7 +659,7 @@ int parse_request(int sock, char *buf)
     client_request.version[strlen(client_request.version)] = '\0';
 
     /*This sleep is a debugging method to see the children during the graceful exit*/
-    // sleep(3);
+    sleep(3);
 
     if (client_request.method == NULL || client_request.URI == NULL || client_request.version == NULL)
     {
@@ -673,13 +671,11 @@ int parse_request(int sock, char *buf)
     if (strcmp(client_request.version, "HTTP/1.1") == 0 && client_request.connection == NULL)
     {
         client_request.connection = "keep-alive";
-        client_request.keepalive = 1;
         // printf("REQUEST connection: %s\n\n", client_request.connection);
     }
     if (strcmp(client_request.version, "HTTP/1.0") == 0 && client_request.connection == NULL)
     {
         client_request.connection = "close";
-        client_request.keepalive = 0; // initialized to keep alive
         // printf("REQUEST connection: %s\n\n", client_request.connection);
     }
     if (strcmp(client_request.method, "GET") != 0)
@@ -783,6 +779,7 @@ int parse_request(int sock, char *buf)
     }
     else if (cache_result == CACHED)
     {
+        printf("File already cached.....sending\n");
         send_from_cache(sock, &client_request);
     }
 
