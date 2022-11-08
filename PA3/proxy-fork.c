@@ -567,7 +567,6 @@ int send_from_cache(int client, void *client_args)
     if (check == 0)
     {
         // printf("This is the last request\n");
-        close(sockfd);
         bzero(http_response.connection, sizeof(http_response.connection));
         strcpy(http_response.connection, "close");
     }
@@ -757,12 +756,13 @@ int parse_request(int sock, char *buf)
     {
         /* Not in cache so lets forward to the server!*/
         relay(sock, &client_request, buf);
+        /* Relay may return in the case of 403 error, we catch them here*/
         if (client_request.blocklist == 1 || client_request.status == 403)
         {
             Forbidden(sock, &client_request);
-            // return back to received_request()
             client_request.blocklist = 0;
             client_request.status = 0;
+            // return back to received_request()
             return 0;
         }
         else
@@ -815,6 +815,7 @@ int received_request(int sock)
         int handle_result = parse_request(sock, buf);
         memset(buf, 0, BUFSIZE);
     }
+    /* while loop breaks when client socket is closed*/
 
     /* If SIGINT is hit but we didnt timeout we should just close and exit*/
     if (check == 0)
