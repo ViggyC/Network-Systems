@@ -71,6 +71,7 @@ typedef struct
     char *hash;
     int blocklist;
     int keepalive;
+    int status;
 } HTTP_REQUEST;
 
 typedef struct
@@ -104,15 +105,7 @@ void sigint_handler(int sig)
 {
     /* close main listening socket - sockfd*/
     // child processes may continue to finish servicing a request
-    // printf("sig: %d\n", sig);
     close(sockfd);
-    // pid_t child_pid;
-    // while ((child_pid = wait(NULL)) > 0)
-    //     ;
-    // // {
-    //     printf("Parent: %d\n", getpid());
-    //     printf("CHild: %d\n", child_pid);
-    // }
     check = 0;
 }
 
@@ -183,7 +176,6 @@ void *NotFound(int client, void *client_args)
     if (strcmp(client_request->connection, "close") == 0)
     {
         close(client);
-        return NULL;
     }
     return NULL;
 }
@@ -201,7 +193,6 @@ void *BadRequest(int client, void *client_args)
     if (strcmp(client_request->connection, "close") == 0)
     {
         close(client);
-        return NULL;
     }
     return NULL;
 }
@@ -218,7 +209,6 @@ void *MethodNotAllowed(int client, void *client_args)
     if (strcmp(client_request->connection, "close") == 0)
     {
         close(client);
-        return NULL;
     }
     return NULL;
 }
@@ -235,7 +225,6 @@ void *Forbidden(int client, void *client_args)
     if (strcmp(client_request->connection, "close") == 0)
     {
         close(client);
-        return NULL;
     }
     return NULL;
 }
@@ -251,9 +240,8 @@ void *HTTPVersionNotSupported(int client, void *client_args)
     if (strcmp(client_request->connection, "close") == 0)
     {
         close(client);
-        return NULL;
     }
-    return NULL; //?
+    return NULL;
 }
 
 int isDirectory(const char *path)
@@ -366,7 +354,8 @@ int relay(int client, void *client_args, char *buf)
     if (connection_status != 0)
     {
         printf("Connection failed: %s\n", client_request->hostname);
-        exit(1);
+        client_request->status = 403; // need to verify if this is good to do
+        return 0;
     }
 
     /* Now we relay the client request to the server*/
@@ -665,7 +654,7 @@ int parse_request(int sock, char *buf)
     client_request.version[strlen(client_request.version)] = '\0';
 
     /*This sleep is a debugging method to see the children during the graceful exit*/
-    // sleep(5);
+    // sleep(2);
 
     if (client_request.method == NULL || client_request.URI == NULL || client_request.version == NULL)
     {
@@ -768,11 +757,12 @@ int parse_request(int sock, char *buf)
     {
         /* Not in cache so lets forward to the server!*/
         relay(sock, &client_request, buf);
-        if (client_request.blocklist == 1)
+        if (client_request.blocklist == 1 || client_request.status == 403)
         {
             Forbidden(sock, &client_request);
             // return back to received_request()
             client_request.blocklist = 0;
+            client_request.status = 0;
             return 0;
         }
         else
