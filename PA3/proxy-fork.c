@@ -33,10 +33,9 @@
 int sockfd;  /* server socket file descriptor*/
 int check;   /*global flag for children to terminate on graceful exit*/
 int timeout; /* global timeout value*/
+int connect_count;
 
-pthread_mutex_t file_lock;
 pthread_mutex_t cache_lock;
-pthread_mutex_t exit_lock;
 
 /*https://www.stackpath.com/edge-academy/what-is-keep-alive/#:~:text=Overview,connection%20header%20can%20be%20used.*/
 
@@ -156,6 +155,10 @@ int getContentType(char *contentType, const char *fileExtension)
     else if (strcmp(fileExtension, "ico") == 0)
     {
         strcpy(contentType, "image/x-icon");
+    }
+    else
+    {
+        strcpy(contentType, "text/html");
     }
 
     return 0;
@@ -350,17 +353,24 @@ int relay(int client, void *client_args, char *buf)
     httpserver.sin_port = htons(port); // assuming port 80 for now
 
     /* Now we can make a connection to the resolved host*/
+    printf("%s connecting....\n", client_request->hostname);
+
     int connection_status = connect(connfd, (struct sockaddr *)&httpserver, sizeof(httpserver));
-    if (connection_status != 0)
+    printf("Connection status: %d for %s\n", connection_status, client_request->hostname);
+    if (connection_status < 0)
     {
-        printf("Connection failed: %s\n", client_request->hostname);
+        error("Connect() failed:");
         client_request->status = 403; // need to verify if this is good to do
         return 0;
     }
+    connect_count++;
+    printf("Connections made: %d\n", connect_count);
+    printf("Connection succeeded: %s, %s, %s\n", client_request->hostname, client_request->portNo, client_request->ip);
 
     /* Now we relay the client request to the server*/
     memset(buf, 0, BUFSIZE);
     sprintf(buf, "GET /%s %s\r\nHost: %s\r\nConnection: %s\r\n\r\n", client_request->file, client_request->version, client_request->hostname, client_request->connection);
+    printf("\n\n");
     printf("Forwarding request:\n%s\n", buf);
 
     /*need to check this!*/
@@ -395,7 +405,7 @@ int relay(int client, void *client_args, char *buf)
         content_length_size = atoi(length);
     }
 
-    printf("Content length: %lu\n", content_length_size);
+    // printf("Content length: %lu\n", content_length_size);
     char *header_overflow = buf;
     char *check = strstr(buf, "\r\n\r\n");
     check = check + 4;
@@ -409,7 +419,7 @@ int relay(int client, void *client_args, char *buf)
     int payload_bytes_recevied;
 
     /* We have the full payload in the buffer!!*/
-    pthread_mutex_lock(&file_lock);
+    pthread_mutex_lock(&cache_lock);
     cache_fd = fopen(cache_file, "wb");
     if (content_length_size != 0)
     {
@@ -418,31 +428,31 @@ int relay(int client, void *client_args, char *buf)
         {
             // we have the full payload, check is the full payload
             bytes_written = fwrite(check, 1, content_length_size, cache_fd);
-            printf("Full payload: wrote %d bytes\n", bytes_written);
+            // printf("Full payload: wrote %d bytes\n", bytes_written);
         }
         else
         {
             /* Still write what we have*/
             payload_bytes_recevied = BUFSIZE - header_length;
             bytes_written = fwrite(check, 1, payload_bytes_recevied, cache_fd);
-            printf("Partial payload: wrote %d bytes\n", bytes_written);
+            // printf("Partial payload: wrote %d bytes\n", bytes_written);
             /* We need to keep reading*/
             left_to_read = content_length_size - payload_bytes_recevied;
-            printf("left to read %d bytes more bytes\n", left_to_read);
+            // printf("left to read %d bytes more bytes\n", left_to_read);
             int total_read = 0;
             while (total_read < left_to_read)
             {
                 memset(buf, 0, BUFSIZE);
                 bytes_read = recv(connfd, buf, BUFSIZE, 0);
-                printf("read: %d\n", bytes_read);
+                // printf("read: %d\n", bytes_read);
                 total_read += bytes_read;
                 bytes_written = fwrite(buf, 1, bytes_read, cache_fd);
-                printf("wrote %d bytes\n", bytes_written);
+                // printf("wrote %d bytes\n", bytes_written);
             }
         }
     }
     fclose(cache_fd);
-    pthread_mutex_unlock(&file_lock);
+    pthread_mutex_unlock(&cache_lock);
 
     // /* So now we have sent the clients request to the resolved host, now we can get its response*/
     // bzero(buf, sizeof(buf));
@@ -707,7 +717,7 @@ int parse_request(int sock, char *buf)
     char *file = strchr(client_request.URI, '/');
     if (file == NULL || *(file + 1) == '\0')
     {
-        client_request.file = "index.html";
+        client_request.file = "/";
         printf("Client requesting %s\n", client_request.file);
     }
     else
@@ -835,8 +845,8 @@ int received_request(int sock)
     send(sock, timeout, sizeof(timeout), 0);
     printf("%s\n", timeout);
     close(sock);
-    printf("Done!!!\n");
-    // return from entry point routine
+    // printf("Done!!!\n");
+    //  return from entry point routine
     exit(0);
 }
 
@@ -858,17 +868,9 @@ int main(int argc, char **argv)
     int portno; /* port to listen on */
     /* SIGINT Graceful Exit Handler*/
     signal(SIGINT, sigint_handler);
+    connect_count = 0;
 
     if (pthread_mutex_init(&cache_lock, NULL) != 0)
-    {
-        exit(1);
-    }
-    if (pthread_mutex_init(&file_lock, NULL) != 0)
-    {
-        exit(1);
-    }
-
-    if (pthread_mutex_init(&exit_lock, NULL) != 0)
     {
         exit(1);
     }
@@ -992,7 +994,8 @@ int main(int argc, char **argv)
         // printf("waiting on: %d\n", child_p);
     }
 
+    pthread_mutex_destroy(&cache_lock);
+
     printf("Done\n");
-    // close(sockfd);
     return 0;
 }
