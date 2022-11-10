@@ -283,7 +283,7 @@ int relay(int client, void *client_args, char *buf)
     FILE *cache_fd;
     ssize_t content_length_size;
 
-    printf("Get host by name: %s\n", client_request->hostname);
+    // printf("Get host by name: %s\n", client_request->hostname);
     server = gethostbyname(client_request->hostname);
     /* If above fails, send 404*/
     if (server)
@@ -304,7 +304,7 @@ int relay(int client, void *client_args, char *buf)
         // break after first find
         break;
     }
-    printf("%s resolved to %s\n", client_request->hostname, IP);
+    // printf("%s resolved to %s\n", client_request->hostname, IP);
     client_request->ip = IP;
 
     /*Blocklost*/
@@ -345,7 +345,12 @@ int relay(int client, void *client_args, char *buf)
         port = atoi(client_request->portNo);
     }
 
-    // printf("Port is %d\n", port);
+    if (port == 0)
+    {
+        port = 80;
+    }
+
+    printf("Port is %d  for %s\n", port, client_request->hostname);
 
     bzero((char *)&httpserver, sizeof(httpserver));
     httpserver.sin_family = AF_INET;
@@ -353,7 +358,7 @@ int relay(int client, void *client_args, char *buf)
     httpserver.sin_port = htons(port); // assuming port 80 for now
 
     /* Now we can make a connection to the resolved host*/
-    printf("%s connecting....\n", client_request->hostname);
+    // printf("%s connecting....\n", client_request->hostname);
 
     int connection_status = connect(connfd, (struct sockaddr *)&httpserver, sizeof(httpserver));
     printf("Connection status: %d for %s\n", connection_status, client_request->hostname);
@@ -419,7 +424,7 @@ int relay(int client, void *client_args, char *buf)
     int payload_bytes_recevied;
 
     /* We have the full payload in the buffer!!*/
-    pthread_mutex_lock(&cache_lock);
+    // pthread_mutex_lock(&cache_lock);
     cache_fd = fopen(cache_file, "wb");
     if (content_length_size != 0)
     {
@@ -447,12 +452,13 @@ int relay(int client, void *client_args, char *buf)
                 // printf("read: %d\n", bytes_read);
                 total_read += bytes_read;
                 bytes_written = fwrite(buf, 1, bytes_read, cache_fd);
+                // sleep(2);
                 // printf("wrote %d bytes\n", bytes_written);
             }
         }
     }
     fclose(cache_fd);
-    pthread_mutex_unlock(&cache_lock);
+    // pthread_mutex_unlock(&cache_lock);
 
     // /* So now we have sent the clients request to the resolved host, now we can get its response*/
     // bzero(buf, sizeof(buf));
@@ -486,7 +492,7 @@ int check_cache(char *buf)
 
     if (access(relative_path, F_OK) == 0)
     {
-        printf("Found %s in cache!\n", relative_path);
+        // printf("Found %s in cache!\n", relative_path);
         /* check time modified*/
         /* Source: https://www.ibm.com/docs/en/i/7.3?topic=ssw_ibm_i_73/apis/stat.html*/
         if (stat(relative_path, &file_stat) == 0)
@@ -494,7 +500,7 @@ int check_cache(char *buf)
             time_t file_modified = file_stat.st_mtime; // The most recent time the contents of the file were changed.
             time_t now = time(NULL);                   // https://stackoverflow.com/questions/7550269/what-is-timenull-in-c#:~:text=The%20call%20to%20time(NULL,point%20to%20the%20current%20time.
             double time_left = difftime(now, file_modified);
-            printf("This many seconds have passed since last cache: %f\n", time_left);
+            // printf("This many seconds have passed since last cache: %f\n", time_left);
             if (time_left > timeout)
             {
                 printf("%s expired and in cache, need to ping server again\n", relative_path);
@@ -507,7 +513,7 @@ int check_cache(char *buf)
     }
     else
     {
-        printf("%s NOT FOUND, need to ping server!\n", relative_path);
+        // printf("%s NOT FOUND, need to ping server!\n", relative_path);
         return NOT_CACHED;
     }
 }
@@ -538,7 +544,7 @@ int send_from_cache(int client, void *client_args)
     strcat(relative_path, "cache/");
     strcat(relative_path, client_request->hash);
 
-    printf("sending from cache: %s\n", relative_path);
+    printf("sending from cache %s -> %s\n", relative_path, client_request->file);
 
     fp = fopen(relative_path, "rb");
     /* This shouldn't happen but check anyways*/
@@ -555,7 +561,7 @@ int send_from_cache(int client, void *client_args)
 
     /* GET CONTENT TYPE!!!!!!*/
     const char *file_extention = get_filename_ext(client_request->file);
-    printf("File extension: %s\n", file_extention);
+    // printf("File extension: %s\n", file_extention);
     if (file_extention == NULL)
     {
         NotFound(client, client_request);
@@ -563,14 +569,14 @@ int send_from_cache(int client, void *client_args)
     }
 
     getContentType(http_response.contentType, file_extention);
-    printf("Reponse Content Type: %s\n", http_response.contentType);
+    // printf("Reponse Content Type: %s\n", http_response.contentType);
 
     /* Generate actual payload to send with header status*/
-    printf("Buffer overflow?\n");
+    // printf("Buffer overflow?\n");
     char payload[fsize];
     bzero(payload, fsize);
     fread(payload, 1, fsize, fp);
-    printf("Buffer overflow?\n");
+    // printf("Buffer overflow?\n");
     fclose(fp);
 
     /* Graceful exit check?*/
@@ -640,6 +646,10 @@ int parse_request(int sock, char *buf)
     char conn_buf[BUFSIZE];
     char host_buf[BUFSIZE];
 
+    bzero(temp_buf, BUFSIZE);
+    bzero(conn_buf, BUFSIZE);
+    bzero(host_buf, BUFSIZE);
+
     strcpy(temp_buf, buf);
     strcpy(conn_buf, buf);
     client_request.method = strtok(temp_buf, " "); // GET
@@ -663,7 +673,7 @@ int parse_request(int sock, char *buf)
     client_request.version[strlen(client_request.version)] = '\0';
 
     /*This sleep is a debugging method to see the children during the graceful exit*/
-    // sleep(2);
+    // sleep(4);
 
     if (client_request.method == NULL || client_request.URI == NULL || client_request.version == NULL)
     {
@@ -731,7 +741,7 @@ int parse_request(int sock, char *buf)
     {
         port = port + 1;
         char *token = strtok(port, "/");
-        // printf("Token:%s\n", token);
+        printf("Token:%s\n", token);
         client_request.portNo = token;
     }
 
@@ -778,14 +788,14 @@ int parse_request(int sock, char *buf)
         else
         {
             /* What I could do here is just store the payload in the cache and then call send from cache immediately after*/
-            printf("File has been cached..... now sending it from cache\n");
+            // printf("File has been cached..... now sending it from cache\n");
             send_from_cache(sock, &client_request);
-            printf("sent from cache\n");
+            // printf("sent from cache\n");
         }
     }
     else if (cache_result == CACHED)
     {
-        printf("File already cached.....sending\n");
+        // printf("File already cached.....sending\n");
         send_from_cache(sock, &client_request);
     }
 
@@ -870,6 +880,7 @@ int main(int argc, char **argv)
     signal(SIGINT, sigint_handler);
     connect_count = 0;
 
+    /* Mutex lock for caching*/
     if (pthread_mutex_init(&cache_lock, NULL) != 0)
     {
         exit(1);
