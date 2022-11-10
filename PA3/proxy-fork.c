@@ -347,6 +347,7 @@ int relay(int client, void *client_args, char *buf)
 
     if (port == 0)
     {
+        printf("BRUHJ!\n");
         port = 80;
     }
 
@@ -424,7 +425,7 @@ int relay(int client, void *client_args, char *buf)
     int payload_bytes_recevied;
 
     /* We have the full payload in the buffer!!*/
-    // pthread_mutex_lock(&cache_lock);
+    pthread_mutex_lock(&cache_lock);
     cache_fd = fopen(cache_file, "wb");
     if (content_length_size != 0)
     {
@@ -458,7 +459,7 @@ int relay(int client, void *client_args, char *buf)
         }
     }
     fclose(cache_fd);
-    // pthread_mutex_unlock(&cache_lock);
+    pthread_mutex_unlock(&cache_lock);
 
     // /* So now we have sent the clients request to the resolved host, now we can get its response*/
     // bzero(buf, sizeof(buf));
@@ -546,6 +547,7 @@ int send_from_cache(int client, void *client_args)
 
     printf("sending from cache %s -> %s\n", relative_path, client_request->file);
 
+    pthread_mutex_lock(&cache_lock);
     fp = fopen(relative_path, "rb");
     /* This shouldn't happen but check anyways*/
     if (fp == NULL)
@@ -577,6 +579,8 @@ int send_from_cache(int client, void *client_args)
     bzero(payload, fsize);
     fread(payload, 1, fsize, fp);
     // printf("Buffer overflow?\n");
+    pthread_mutex_unlock(&cache_lock);
+
     fclose(fp);
 
     /* Graceful exit check?*/
@@ -736,13 +740,17 @@ int parse_request(int sock, char *buf)
         printf("Client requesting %s\n", client_request.file);
     }
 
-    char *port = strstr(client_request.URI, ":");
+    char *port = strchr(client_request.URI, ':');
     if (port != NULL)
     {
         port = port + 1;
         char *token = strtok(port, "/");
         printf("Token:%s\n", token);
         client_request.portNo = token;
+    }
+    else
+    {
+        client_request.portNo = '\0';
     }
 
     printf("REQUEST method: %s\n", client_request.method);
