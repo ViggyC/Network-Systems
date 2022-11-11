@@ -453,7 +453,8 @@ int relay(int client, void *client_args, char *buf)
     if (ok == -1)
     {
         ok = 0; // reset for keep alive
-        send(client, httpResponseHeader, header_length, 0);
+        printf("PROXY sending:\n%s\n", httpResponseHeader);
+        send(client, httpResponseHeader, sizeof(httpResponseHeader), 0);
         return 2; // 2 means dont send from cache
     }
 
