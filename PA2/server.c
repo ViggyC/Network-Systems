@@ -275,7 +275,7 @@ int service_request(int client, void *client_args)
             strcat(relative_path, "/index.htm");
         }
     }
-    // printf("Relative path: %s\n", relative_path);
+    printf("Relative path: %s\n", relative_path);
     fp = fopen(relative_path, "rb");
     if (fp == NULL)
     {
@@ -339,7 +339,7 @@ int service_request(int client, void *client_args)
     memcpy(full_response + strlen(full_response), payload, fsize);
     /* AND we got it! */
     /* the child processes will all be sending to different {client} addresses, per parent accept() */
-    printf("%s\n", full_response);
+    printf("%s\n", response_header);
 
     printf("size of full response: %lu\n", sizeof(full_response));
 
@@ -363,7 +363,7 @@ int parse_request(int client, char *buf)
 {
     // printf("Parsing the HTTP request in this routine \n");
     buf[strlen(buf) - 1] = '\0';
-    // printf("Client Request:\n%s\n", buf);
+    printf("Client Request:\n%s\n", buf);
 
     /*Parse client request*/
     HTTP_REQUEST client_request;
