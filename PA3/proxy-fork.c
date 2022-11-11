@@ -272,6 +272,8 @@ void md5_generator(char *original, char *md5_hash)
 int relay(int client, void *client_args, char *buf)
 {
     HTTP_REQUEST *client_request = (HTTP_REQUEST *)client_args;
+    HTTPResponseHeader http_response; /* to send back to client*/
+
     // remote server we are acting as a client towards
     struct sockaddr_in httpserver;
     struct in_addr **addr_list;
@@ -282,6 +284,21 @@ int relay(int client, void *client_args, char *buf)
     int n;
     FILE *cache_fd;
     ssize_t content_length_size;
+    int ok; // flag for 200 status codes
+
+    /* Just get version right away, part of server response*/
+    strcpy(http_response.version, client_request->version);
+    // printf("HTTP version response: %s\n", http_response.version);
+
+    /* Some client may not send a connection type - dumb*/
+    if (client_request->connection != NULL)
+    {
+        strcpy(http_response.connection, client_request->connection);
+    }
+
+    /* GET CONTENT TYPE!!!!!!*/
+    const char *file_extention = get_filename_ext(client_request->file);
+    getContentType(http_response.contentType, file_extention);
 
     // printf("Get host by name: %s\n", client_request->hostname);
     server = gethostbyname(client_request->hostname);
@@ -351,7 +368,7 @@ int relay(int client, void *client_args, char *buf)
         port = 80;
     }
 
-    printf("Port is %d  for %s\n", port, client_request->hostname);
+    // printf("Port is %d  for %s\n", port, client_request->hostname);
 
     bzero((char *)&httpserver, sizeof(httpserver));
     httpserver.sin_family = AF_INET;
@@ -362,7 +379,7 @@ int relay(int client, void *client_args, char *buf)
     // printf("%s connecting....\n", client_request->hostname);
 
     int connection_status = connect(connfd, (struct sockaddr *)&httpserver, sizeof(httpserver));
-    printf("Connection status: %d for %s\n", connection_status, client_request->hostname);
+    // printf("Connection status: %d for %s\n", connection_status, client_request->hostname);
     if (connection_status < 0)
     {
         error("Connect() failed:");
@@ -370,8 +387,8 @@ int relay(int client, void *client_args, char *buf)
         return 0;
     }
     connect_count++;
-    printf("Connections made: %d\n", connect_count);
-    printf("Connection succeeded: %s, %s, %s\n", client_request->hostname, client_request->portNo, client_request->ip);
+    // printf("Connections made: %d\n", connect_count);
+    // printf("Connection succeeded: %s, %s, %s\n", client_request->hostname, client_request->portNo, client_request->ip);
 
     /* Now we relay the client request to the server*/
     memset(buf, 0, BUFSIZE);
@@ -393,6 +410,7 @@ int relay(int client, void *client_args, char *buf)
     /* Need to seperate http reponse header and payload*/
     char httpResponseHeader[BUFSIZE];
     bzero(httpResponseHeader, sizeof(httpResponseHeader));
+    char *non_successful_status;
     /* Ok this is the hard part*/
     /* I only want to store the payload*/
     /* First get the header*/
@@ -411,37 +429,61 @@ int relay(int client, void *client_args, char *buf)
         content_length_size = atoi(length);
     }
 
-    // printf("Content length: %lu\n", content_length_size);
+    printf("Content length: %lu\n", content_length_size);
+
+    /* If we dont get a successful response, we should NOT cache and send the entire response directly in this function*/
+    if (strstr(httpResponseHeader, "200 OK") == NULL)
+    {
+        printf("GOT NON 200 STATUS!\n");
+        ok = -1;
+    }
+
+    printf("ORIGIN RESPONSE HEADER:\n%s\n", httpResponseHeader);
+
     char *header_overflow = buf;
     char *check = strstr(buf, "\r\n\r\n");
     check = check + 4;
 
     int header_length = check - header_overflow;
     int left_to_read;
-    // printf("Header length: %d\n", header_length);
-    //  printf("payload: %s\n", check);
+    printf("Header length for %s: %d\n", client_request->file, header_length);
+    // printf("payload: %s\n", check);
+
+    /* Again, if we didnt get a successful response*/
+    if (ok == -1)
+    {
+        ok = 0; // reset for keep alive
+        send(client, httpResponseHeader, header_length, 0);
+        return 2; // 2 means dont send from cache
+    }
 
     int bytes_written;
     int payload_bytes_recevied;
 
+    /* SEND HTTP RESPONSE HEADER*/
+    // send(client, response_header, sizeof(response_header), 0); //~~~~~~~~~~~~~~~~~~~~~
+
     /* We have the full payload in the buffer!!*/
-    pthread_mutex_lock(&cache_lock);
+    // pthread_mutex_lock(&cache_lock);
     cache_fd = fopen(cache_file, "wb");
     if (content_length_size != 0)
     {
 
         if (BUFSIZE - header_length > content_length_size)
         {
+            printf("WRITE FULL PAY LOAD");
             // we have the full payload, check is the full payload
             bytes_written = fwrite(check, 1, content_length_size, cache_fd);
-            // printf("Full payload: wrote %d bytes\n", bytes_written);
+            printf("Full payload: wrote %d bytes\n", bytes_written);
+            // send(client, check, bytes_written, 0); //~~~~~~~~~~~~~~~~~~~~~
         }
         else
         {
             /* Still write what we have*/
             payload_bytes_recevied = BUFSIZE - header_length;
             bytes_written = fwrite(check, 1, payload_bytes_recevied, cache_fd);
-            // printf("Partial payload: wrote %d bytes\n", bytes_written);
+            // send(client, check, bytes_written, 0); //~~~~~~~~~~~~~~~~~~~~~
+            //  printf("Partial payload: wrote %d bytes\n", bytes_written);
             /* We need to keep reading*/
             left_to_read = content_length_size - payload_bytes_recevied;
             // printf("left to read %d bytes more bytes\n", left_to_read);
@@ -453,13 +495,14 @@ int relay(int client, void *client_args, char *buf)
                 // printf("read: %d\n", bytes_read);
                 total_read += bytes_read;
                 bytes_written = fwrite(buf, 1, bytes_read, cache_fd);
-                // sleep(2);
-                // printf("wrote %d bytes\n", bytes_written);
+                // send(client, buf, bytes_read, 0); //~~~~~~~~~~~~~~~~~~~~~
+                //  sleep(2);
+                //  printf("wrote %d bytes\n", bytes_written);
             }
         }
     }
     fclose(cache_fd);
-    pthread_mutex_unlock(&cache_lock);
+    // pthread_mutex_unlock(&cache_lock);
 
     // /* So now we have sent the clients request to the resolved host, now we can get its response*/
     // bzero(buf, sizeof(buf));
@@ -547,7 +590,7 @@ int send_from_cache(int client, void *client_args)
 
     printf("sending from cache %s -> %s\n", relative_path, client_request->file);
 
-    pthread_mutex_lock(&cache_lock);
+    // pthread_mutex_lock(&cache_lock);
     fp = fopen(relative_path, "rb");
     /* This shouldn't happen but check anyways*/
     if (fp == NULL)
@@ -579,7 +622,7 @@ int send_from_cache(int client, void *client_args)
     bzero(payload, fsize);
     fread(payload, 1, fsize, fp);
     // printf("Buffer overflow?\n");
-    pthread_mutex_unlock(&cache_lock);
+    // pthread_mutex_unlock(&cache_lock);
 
     fclose(fp);
 
@@ -604,7 +647,7 @@ int send_from_cache(int client, void *client_args)
     }
 
     /* This is the header that our proxy generates: same as PA2*/
-    printf("%s\n", response_header);
+    printf("PROXY RESPONSE HEADER:\n%s\n", response_header);
     /* Now attach the payload*/
     char full_response[fsize + strlen(response_header)];
     strcpy(full_response, response_header);
@@ -783,7 +826,7 @@ int parse_request(int sock, char *buf)
     if (cache_result == NOT_CACHED)
     {
         /* Not in cache so lets forward to the server!*/
-        relay(sock, &client_request, buf);
+        int server_response = relay(sock, &client_request, buf);
         /* Relay may return in the case of 403 error, we catch them here*/
         if (client_request.blocklist == 1 || client_request.status == 403)
         {
@@ -793,13 +836,15 @@ int parse_request(int sock, char *buf)
             // return back to received_request()
             return 0;
         }
-        else
+        if (server_response == 2) // non 200 status code
         {
-            /* What I could do here is just store the payload in the cache and then call send from cache immediately after*/
-            // printf("File has been cached..... now sending it from cache\n");
-            send_from_cache(sock, &client_request);
-            // printf("sent from cache\n");
+            return 0;
         }
+
+        /* What I could do here is just store the payload in the cache and then call send from cache immediately after*/
+        // printf("File has been cached..... now sending it from cache\n");
+        send_from_cache(sock, &client_request);
+        // printf("sent from cache\n");
     }
     else if (cache_result == CACHED)
     {
