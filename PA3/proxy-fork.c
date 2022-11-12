@@ -450,7 +450,7 @@ int relay(int client, void *client_args, char *buf)
         ok = -1;
     }
 
-    printf("ORIGIN RESPONSE HEADER:\n%s\n", httpResponseHeader);
+    // printf("ORIGIN RESPONSE HEADER:\n%s\n", httpResponseHeader);
 
     char *header_overflow = buf;
     char *check = strstr(buf, "\r\n\r\n");
