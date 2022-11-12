@@ -640,9 +640,9 @@ int send_from_cache(int client, void *client_args)
     fread(payload, 1, fsize, fp);
     // printf("Buffer overflow?\n");
     // pthread_mutex_unlock(&cache_lock);
-    pthread_mutex_unlock(&data->mutex);
 
     fclose(fp);
+    pthread_mutex_unlock(&data->mutex);
 
     /* Graceful exit check?*/
     if (check == 0)
