@@ -317,11 +317,11 @@ int relay(int client, void *client_args, char *buf)
     /* If above fails, send 404*/
     if (server)
     {
-        printf("Found server: %s \n", server->h_name);
+        // printf("Found server: %s \n", server->h_name);
     }
     else
     {
-        printf("404 Server Not Found\n");
+        // printf("404 Server Not Found\n");
         NotFound(client, &client_request);
     }
 
@@ -376,7 +376,7 @@ int relay(int client, void *client_args, char *buf)
 
     if (port == 0)
     {
-        printf("BRUHJ!\n");
+        // printf("BRUHJ!\n");
         port = 80;
     }
 
@@ -441,12 +441,12 @@ int relay(int client, void *client_args, char *buf)
         content_length_size = atoi(length);
     }
 
-    printf("Content length: %lu\n", content_length_size);
+    // printf("Content length: %lu\n", content_length_size);
 
     /* If we dont get a successful response, we should NOT cache and send the entire response directly in this function*/
     if (strstr(httpResponseHeader, "200 OK") == NULL)
     {
-        printf("GOT NON 200 STATUS!\n");
+        // printf("GOT NON 200 STATUS!\n");
         ok = -1;
     }
 
@@ -458,8 +458,8 @@ int relay(int client, void *client_args, char *buf)
 
     int header_length = check - header_overflow;
     int left_to_read;
-    printf("Header length for %s: %d\n", client_request->file, header_length);
-    // printf("payload: %s\n", check);
+    // printf("Header length for %s: %d\n", client_request->file, header_length);
+    //  printf("payload: %s\n", check);
 
     /* Again, if we didnt get a successful response*/
     if (ok == -1)
@@ -485,11 +485,11 @@ int relay(int client, void *client_args, char *buf)
 
         if (BUFSIZE - header_length > content_length_size)
         {
-            printf("WRITE FULL PAY LOAD");
-            // we have the full payload, check is the full payload
+            // printf("WRITE FULL PAY LOAD");
+            //  we have the full payload, check is the full payload
             bytes_written = fwrite(check, 1, content_length_size, cache_fd);
-            printf("Full payload: wrote %d bytes\n", bytes_written);
-            // send(client, check, bytes_written, 0); //~~~~~~~~~~~~~~~~~~~~~
+            // printf("Full payload: wrote %d bytes\n", bytes_written);
+            //  send(client, check, bytes_written, 0); //~~~~~~~~~~~~~~~~~~~~~
         }
         else
         {
@@ -562,12 +562,12 @@ int check_cache(char *buf)
             // printf("This many seconds have passed since last cache: %f\n", time_left);
             if (time_left > timeout)
             {
-                printf("%s expired and in cache, need to ping server again\n", relative_path);
+                // printf("%s expired and in cache, need to ping server again\n", relative_path);
                 return NOT_CACHED;
             }
         }
 
-        printf("Not expired and in Cache!\n");
+        // printf("Not expired and in Cache!\n");
         return CACHED;
     }
     else
@@ -814,14 +814,14 @@ int parse_request(int sock, char *buf)
         client_request.portNo = '\0';
     }
 
-    printf("REQUEST method: %s\n", client_request.method);
-    printf("REQUEST URI: %s\n", client_request.URI);
-    printf("REQUEST version: %s\n", client_request.version);
-    printf("REQUEST host: %s\n", client_request.hostname);
-    printf("REQUEST port: %s\n", client_request.portNo);
-    printf("REQUEST connection: %s\n", client_request.connection);
-    printf("REQUEST file: %s\n", client_request.file);
-    printf("\n\n");
+    // printf("REQUEST method: %s\n", client_request.method);
+    // printf("REQUEST URI: %s\n", client_request.URI);
+    // printf("REQUEST version: %s\n", client_request.version);
+    // printf("REQUEST host: %s\n", client_request.hostname);
+    // printf("REQUEST port: %s\n", client_request.portNo);
+    // printf("REQUEST connection: %s\n", client_request.connection);
+    // printf("REQUEST file: %s\n", client_request.file);
+    // printf("\n\n");
 
     /* generate hash: all we need is the hostname and the filename*/
     char hash_input[strlen(client_request.hostname) + strlen(client_request.file) + 1];
