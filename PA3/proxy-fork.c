@@ -12,7 +12,11 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
+#include <fcntl.h>
 #include <pthread.h>
+#include <assert.h>
+#include <sys/mman.h>
 #include <signal.h>
 #include <netdb.h>
 #include <sys/types.h>
@@ -36,6 +40,14 @@ int timeout; /* global timeout value*/
 int connect_count;
 
 pthread_mutex_t cache_lock;
+
+typedef struct
+{
+    bool done;
+    pthread_mutex_t mutex;
+} shared_data;
+
+static shared_data *data = NULL;
 
 /*https://www.stackpath.com/edge-academy/what-is-keep-alive/#:~:text=Overview,connection%20header%20can%20be%20used.*/
 
@@ -453,7 +465,7 @@ int relay(int client, void *client_args, char *buf)
     if (ok == -1)
     {
         ok = 0; // reset for keep alive
-        printf("PROXY sending:\n%s\n", httpResponseHeader);
+        // printf("PROXY sending:\n%s\n", httpResponseHeader);
         send(client, httpResponseHeader, sizeof(httpResponseHeader), 0);
         return 2; // 2 means dont send from cache
     }
@@ -466,6 +478,7 @@ int relay(int client, void *client_args, char *buf)
 
     /* We have the full payload in the buffer!!*/
     // pthread_mutex_lock(&cache_lock);
+    pthread_mutex_lock(&data->mutex);
     cache_fd = fopen(cache_file, "wb");
     if (content_length_size != 0)
     {
@@ -503,6 +516,7 @@ int relay(int client, void *client_args, char *buf)
         }
     }
     fclose(cache_fd);
+    pthread_mutex_unlock(&data->mutex);
     // pthread_mutex_unlock(&cache_lock);
 
     // /* So now we have sent the clients request to the resolved host, now we can get its response*/
@@ -592,6 +606,8 @@ int send_from_cache(int client, void *client_args)
     printf("sending from cache %s -> %s\n", relative_path, client_request->file);
 
     // pthread_mutex_lock(&cache_lock);
+    pthread_mutex_lock(&data->mutex);
+
     fp = fopen(relative_path, "rb");
     /* This shouldn't happen but check anyways*/
     if (fp == NULL)
@@ -624,6 +640,7 @@ int send_from_cache(int client, void *client_args)
     fread(payload, 1, fsize, fp);
     // printf("Buffer overflow?\n");
     // pthread_mutex_unlock(&cache_lock);
+    pthread_mutex_unlock(&data->mutex);
 
     fclose(fp);
 
@@ -721,7 +738,7 @@ int parse_request(int sock, char *buf)
     client_request.version[strlen(client_request.version)] = '\0';
 
     /*This sleep is a debugging method to see the children during the graceful exit*/
-    // sleep(4);
+    // sleep(2);
 
     if (client_request.method == NULL || client_request.URI == NULL || client_request.version == NULL)
     {
@@ -775,7 +792,7 @@ int parse_request(int sock, char *buf)
     char *file = strchr(client_request.URI, '/');
     if (file == NULL || *(file + 1) == '\0')
     {
-        client_request.file = "/";
+        client_request.file = "";
         printf("Client requesting %s\n", client_request.file);
     }
     else
@@ -940,6 +957,20 @@ int main(int argc, char **argv)
         exit(1);
     }
 
+    /* Source: https://stackoverflow.com/questions/19172541/procs-fork-and-mutexes*/
+    int prot = PROT_READ | PROT_WRITE;
+    int flags = MAP_SHARED | MAP_ANONYMOUS;
+    data = mmap(NULL, sizeof(shared_data), prot, flags, -1, 0);
+    assert(data);
+
+    data->done = false;
+
+    // initialise mutex so it works properly in shared memory
+    pthread_mutexattr_t attr;
+    pthread_mutexattr_init(&attr);
+    pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
+    pthread_mutex_init(&data->mutex, &attr);
+
     /* Is timeout optional?*/
     if (argc != 3)
     {
@@ -1060,7 +1091,7 @@ int main(int argc, char **argv)
     }
 
     pthread_mutex_destroy(&cache_lock);
-
+    munmap(data, sizeof(data));
     printf("Done\n");
     return 0;
 }
