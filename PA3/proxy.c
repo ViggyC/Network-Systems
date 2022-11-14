@@ -39,11 +39,10 @@ int check;   /*global flag for children to terminate on graceful exit*/
 int timeout; /* global timeout value*/
 int connect_count;
 
-pthread_mutex_t cache_lock;
-
 typedef struct
 {
     bool done;
+    int writing;
     pthread_mutex_t mutex;
 } shared_data;
 
@@ -458,8 +457,7 @@ int relay(int client, void *client_args, char *buf)
 
     int header_length = check - header_overflow;
     int left_to_read;
-    // printf("Header length for %s: %d\n", client_request->file, header_length);
-    //  printf("payload: %s\n", check);
+    printf("Header length for %s: %d\n", client_request->file, header_length);
 
     /* Again, if we didnt get a successful response*/
     if (ok == -1)
@@ -473,34 +471,27 @@ int relay(int client, void *client_args, char *buf)
     int bytes_written;
     int payload_bytes_recevied;
 
-    /* SEND HTTP RESPONSE HEADER*/
-    // send(client, response_header, sizeof(response_header), 0); //~~~~~~~~~~~~~~~~~~~~~
-
     /* We have the full payload in the buffer!!*/
-    // pthread_mutex_lock(&cache_lock);
     pthread_mutex_lock(&data->mutex);
     cache_fd = fopen(cache_file, "wb");
+
     if (content_length_size != 0)
     {
-
         if (BUFSIZE - header_length > content_length_size)
         {
-            // printf("WRITE FULL PAY LOAD");
-            //  we have the full payload, check is the full payload
+            // we have the full payload, check is the full payload
             bytes_written = fwrite(check, 1, content_length_size, cache_fd);
             // printf("Full payload: wrote %d bytes\n", bytes_written);
-            //  send(client, check, bytes_written, 0); //~~~~~~~~~~~~~~~~~~~~~
         }
         else
         {
             /* Still write what we have*/
             payload_bytes_recevied = BUFSIZE - header_length;
             bytes_written = fwrite(check, 1, payload_bytes_recevied, cache_fd);
-            // send(client, check, bytes_written, 0); //~~~~~~~~~~~~~~~~~~~~~
-            //  printf("Partial payload: wrote %d bytes\n", bytes_written);
+            printf("Partial payload: wrote %d bytes\n", bytes_written);
             /* We need to keep reading*/
             left_to_read = content_length_size - payload_bytes_recevied;
-            // printf("left to read %d bytes more bytes\n", left_to_read);
+            printf("left to read %d bytes more bytes\n", left_to_read);
             int total_read = 0;
             while (total_read < left_to_read)
             {
@@ -509,46 +500,28 @@ int relay(int client, void *client_args, char *buf)
                 // printf("read: %d\n", bytes_read);
                 total_read += bytes_read;
                 bytes_written = fwrite(buf, 1, bytes_read, cache_fd);
-                // send(client, buf, bytes_read, 0); //~~~~~~~~~~~~~~~~~~~~~
-                //  sleep(2);
-                //  printf("wrote %d bytes\n", bytes_written);
             }
+            printf("total written to file: %d\n", total_read + payload_bytes_recevied);
         }
     }
     fclose(cache_fd);
     pthread_mutex_unlock(&data->mutex);
-    // pthread_mutex_unlock(&cache_lock);
-
-    // /* So now we have sent the clients request to the resolved host, now we can get its response*/
-    // bzero(buf, sizeof(buf));
-    // while ((n = recv(connfd, buf, BUFSIZE, 0)) > 0)
-    // {                            // read data from input socket
-    //     send(client, buf, n, 0); // send data to output socket
-    //     bzero(buf, sizeof(buf));
-    // }
-
     return 0;
 }
 
 /* Call this at the beginning in case we have what client wants*/
 /* cant use fopen to query cache, need to use DIRENT*/
-/* Need to implement expiration!!!!!!!!!!!!!!!!!!*/
 int check_cache(char *buf)
 {
-
     FILE *fp;
-
     char relative_path[BUFSIZE];
     bzero(relative_path, sizeof(relative_path));
     strcat(relative_path, "./cache/");
     strcat(relative_path, buf);
-    /* need to convert to md5 hash*/
     printf("relative path: %s\n", relative_path);
-
     /* for checking time modifed*/
     struct stat file_stat;
     DIR *dir = opendir("./cache");
-
     if (access(relative_path, F_OK) == 0)
     {
         // printf("Found %s in cache!\n", relative_path);
@@ -559,20 +532,19 @@ int check_cache(char *buf)
             time_t file_modified = file_stat.st_mtime; // The most recent time the contents of the file were changed.
             time_t now = time(NULL);                   // https://stackoverflow.com/questions/7550269/what-is-timenull-in-c#:~:text=The%20call%20to%20time(NULL,point%20to%20the%20current%20time.
             double time_left = difftime(now, file_modified);
-            // printf("This many seconds have passed since last cache: %f\n", time_left);
+            printf("This many seconds have passed since last cache: %f\n", time_left);
             if (time_left > timeout)
             {
-                // printf("%s expired and in cache, need to ping server again\n", relative_path);
+                printf("%s expired and in cache, need to ping server again\n", relative_path);
                 return NOT_CACHED;
             }
         }
-
-        // printf("Not expired and in Cache!\n");
+        printf("Not expired and in Cache!\n");
         return CACHED;
     }
     else
     {
-        // printf("%s NOT FOUND, need to ping server!\n", relative_path);
+        printf("%s NOT FOUND, need to ping server!\n", relative_path);
         return NOT_CACHED;
     }
 }
@@ -588,8 +560,6 @@ int send_from_cache(int client, void *client_args)
 
     /* Just get version right away, part of server response*/
     strcpy(http_response.version, client_request->version);
-    // printf("HTTP version response: %s\n", http_response.version);
-
     /* Some client may not send a connection type - dumb*/
     if (client_request->connection != NULL)
     {
@@ -603,11 +573,7 @@ int send_from_cache(int client, void *client_args)
     strcat(relative_path, "cache/");
     strcat(relative_path, client_request->hash);
 
-    printf("sending from cache %s -> %s\n", relative_path, client_request->file);
-
-    // pthread_mutex_lock(&cache_lock);
-    pthread_mutex_lock(&data->mutex);
-
+    // pthread_mutex_lock(&data->mutex);
     fp = fopen(relative_path, "rb");
     /* This shouldn't happen but check anyways*/
     if (fp == NULL)
@@ -629,25 +595,11 @@ int send_from_cache(int client, void *client_args)
         NotFound(client, client_request);
         return 0;
     }
-
     getContentType(http_response.contentType, file_extention);
     // printf("Reponse Content Type: %s\n", http_response.contentType);
-
-    /* Generate actual payload to send with header status*/
-    // printf("Buffer overflow?\n");
-    char payload[fsize];
-    bzero(payload, fsize);
-    fread(payload, 1, fsize, fp);
-    // printf("Buffer overflow?\n");
-    // pthread_mutex_unlock(&cache_lock);
-
-    fclose(fp);
-    pthread_mutex_unlock(&data->mutex);
-
     /* Graceful exit check?*/
     if (check == 0)
     {
-        // printf("This is the last request\n");
         bzero(http_response.connection, sizeof(http_response.connection));
         strcpy(http_response.connection, "close");
     }
@@ -655,27 +607,33 @@ int send_from_cache(int client, void *client_args)
     char response_header[BUFSIZE];
     if (strcmp(client_request->connection, "keep-alive") == 0 || strcmp(client_request->connection, "Keep-alive") == 0)
     {
-        // printf("keep alive!\n");
         sprintf(response_header, "%s 200 OK\r\nContent-Type: %s\r\nContent-Length: %ld\r\nConnection: %s\r\n\r\n", http_response.version, http_response.contentType, fsize, http_response.connection);
     }
     else
     {
-        // printf("sending last request: %s\n", http_response.connection);
         sprintf(response_header, "%s 200 OK\r\nContent-Type: %s\r\nContent-Length: %ld\r\nConnection: %s\r\n\r\n", http_response.version, http_response.contentType, fsize, http_response.connection);
     }
 
     /* This is the header that our proxy generates: same as PA2*/
     printf("PROXY RESPONSE HEADER:\n%s\n", response_header);
+    send(client, response_header, strlen(response_header), 0);
     /* Now attach the payload*/
-    char full_response[fsize + strlen(response_header)];
-    strcpy(full_response, response_header);
-    // use memcpy() to attach payload to header
-    memcpy(full_response + strlen(full_response), payload, fsize);
-    /* AND we got it! */
-    /* the child processes will all be sending to different {client} addresses, per parent accept() */
-
-    send(client, full_response, sizeof(full_response), 0);
-    // printf("Full response size : %lu\n", sizeof(full_response));
+    int total_payload_sent = 0;
+    int bytes_read;
+    int bytes_sent;
+    /* Generate actual payload to send with header status*/
+    char payload[BUFSIZE];
+    memset(payload, 0, BUFSIZE);
+    while (total_payload_sent < fsize)
+    {
+        bytes_read = fread(payload, 1, BUFSIZE, fp);
+        bytes_sent = send(client, payload, bytes_read, 0);
+        memset(payload, 0, BUFSIZE);
+        total_payload_sent += bytes_sent;
+    }
+    printf("Full response size : %d\n", total_payload_sent);
+    fclose(fp);
+    // pthread_mutex_unlock(&data->mutex);
 
     /* Do I need this or is connection close in the header enough?*/
     if ((strcmp(http_response.connection, "close") == 0) || (strcmp(http_response.connection, "Close") == 0))
@@ -839,6 +797,7 @@ int parse_request(int sock, char *buf)
     client_request.hash = hash_output;
 
     /*Check cache here before pinging server*/
+
     int cache_result = check_cache(client_request.hash);
     /* this will return NOT_CACHED if its not in the cache directory our the timeout hit*/
     if (cache_result == NOT_CACHED)
@@ -858,16 +817,19 @@ int parse_request(int sock, char *buf)
         {
             return 0;
         }
-
         /* What I could do here is just store the payload in the cache and then call send from cache immediately after*/
         // printf("File has been cached..... now sending it from cache\n");
+        pthread_mutex_lock(&data->mutex);
         send_from_cache(sock, &client_request);
+        pthread_mutex_unlock(&data->mutex);
         // printf("sent from cache\n");
     }
     else if (cache_result == CACHED)
     {
         // printf("File already cached.....sending\n");
+        pthread_mutex_lock(&data->mutex);
         send_from_cache(sock, &client_request);
+        pthread_mutex_unlock(&data->mutex);
     }
 
     // free(socket_desc);
@@ -950,12 +912,6 @@ int main(int argc, char **argv)
     /* SIGINT Graceful Exit Handler*/
     signal(SIGINT, sigint_handler);
     connect_count = 0;
-
-    /* Mutex lock for caching*/
-    if (pthread_mutex_init(&cache_lock, NULL) != 0)
-    {
-        exit(1);
-    }
 
     /* Source: https://stackoverflow.com/questions/19172541/procs-fork-and-mutexes*/
     int prot = PROT_READ | PROT_WRITE;
@@ -1066,7 +1022,6 @@ int main(int argc, char **argv)
             // exit(0);
             /* After parsing need to send response, this is handled in parse_request() as well*/
             /* meanwhile parent is creating more forks() for incoming requests*/
-
             /* If SIGINT is hit but we didnt timeout we should just close and exit*/
             if (check == 0)
             {
@@ -1079,9 +1034,6 @@ int main(int argc, char **argv)
         /*Parent goes back up to the loop to handle more clients, child may be running multiple requests*/
     }
     /*Accept returns -1 when signal handler closes the socket, so we sleep and let the children finish*/
-    // printf("sleeping...\n");
-    // /*10 second wait for children to finish before parent exits: CJ/mason office hours*/
-    // sleep(10);
     printf("Gracefully exiting...\n");
     /*waiting for child processes to finish*/
     pid_t child_p;
@@ -1089,8 +1041,6 @@ int main(int argc, char **argv)
     {
         // printf("waiting on: %d\n", child_p);
     }
-
-    pthread_mutex_destroy(&cache_lock);
     munmap(data, sizeof(data));
     printf("Done\n");
     return 0;
