@@ -645,7 +645,7 @@ int send_from_cache(int client, void *client_args)
     {
         printf("Closing client connection....\n");
         close(client);
-        // exit(0);
+        exit(0);
     }
 
     return 0;
@@ -703,7 +703,7 @@ int parse_request(int sock, char *buf)
     client_request.version[strlen(client_request.version)] = '\0';
 
     /*This sleep is a debugging method to see the children during the graceful exit*/
-    sleep(2);
+    // sleep(2);
 
     if (client_request.method == NULL || client_request.URI == NULL || client_request.version == NULL)
     {
