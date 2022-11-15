@@ -38,6 +38,8 @@ int sockfd;  /* server socket file descriptor*/
 int check;   /*global flag for children to terminate on graceful exit*/
 int timeout; /* global timeout value*/
 int connect_count;
+FILE *bl;
+int blocklist;
 
 typedef struct
 {
@@ -282,6 +284,7 @@ void md5_generator(char *original, char *md5_hash)
 /* It just stores the payload in the cache and then returns and then the program will send from cache like PA2*/
 int relay(int client, void *client_args, char *buf)
 {
+    printf("In relay\n");
     HTTP_REQUEST *client_request = (HTTP_REQUEST *)client_args;
     HTTPResponseHeader http_response; /* to send back to client*/
 
@@ -332,31 +335,33 @@ int relay(int client, void *client_args, char *buf)
         // break after first find
         break;
     }
-    // printf("%s resolved to %s\n", client_request->hostname, IP);
+    printf("%s resolved to %s\n", client_request->hostname, IP);
     client_request->ip = IP;
 
-    /*Blocklost*/
-    FILE *bl = fopen("./blocklist", "r");
-    char hostname[254];
-    while (fgets(hostname, sizeof(hostname), bl))
+    if (blocklist == 1)
     {
-        // printf("%s\n", hostname);
-        if ((hostname[0] != '\n'))
+
+        char hostname[254];
+        while (fgets(hostname, sizeof(hostname), bl))
         {
-            hostname[strlen(hostname) - 1] = '\0';
-            if (strcmp(client_request->ip, hostname) == 0 || strcmp(client_request->hostname, hostname) == 0)
+            // printf("%s\n", hostname);
+            if ((hostname[0] != '\n'))
             {
-                /*This domain has been blocked*/
-                printf("%s is blocked\n", hostname);
-                // Forbidden(client, &client_request);
-                client_request->blocklist = 1;
-                return 0;
+                hostname[strlen(hostname) - 1] = '\0';
+                if (strcmp(client_request->ip, hostname) == 0 || strcmp(client_request->hostname, hostname) == 0)
+                {
+                    /*This domain has been blocked*/
+                    printf("%s is blocked\n", hostname);
+                    // Forbidden(client, &client_request);
+                    client_request->blocklist = 1;
+                    return 0;
+                }
             }
         }
     }
-    fclose(bl);
 
     connfd = socket(AF_INET, SOCK_STREAM, 0);
+    printf("created socket\n");
     if (connfd == -1)
     {
         printf("socket creation failed...\n");
@@ -390,6 +395,7 @@ int relay(int client, void *client_args, char *buf)
     // printf("%s connecting....\n", client_request->hostname);
 
     int connection_status = connect(connfd, (struct sockaddr *)&httpserver, sizeof(httpserver));
+    printf("Trying to connect\n");
     // printf("Connection status: %d for %s\n", connection_status, client_request->hostname);
     if (connection_status < 0)
     {
@@ -403,7 +409,7 @@ int relay(int client, void *client_args, char *buf)
 
     /* Now we relay the client request to the server*/
     memset(buf, 0, BUFSIZE);
-    sprintf(buf, "GET /%s %s\r\nHost: %s\r\nConnection: %s\r\n\r\n", client_request->file, client_request->version, client_request->hostname, client_request->connection);
+    sprintf(buf, "GET /%s %s\r\nHost: %s\r\nConnection: close\r\n\r\n", client_request->file, client_request->version, client_request->hostname);
     printf("\n\n");
     printf("Forwarding request:\n%s\n", buf);
 
@@ -675,6 +681,8 @@ int parse_request(int sock, char *buf)
 
     strcpy(temp_buf, buf);
     strcpy(conn_buf, buf);
+    strcpy(host_buf, buf);
+
     client_request.method = strtok(temp_buf, " "); // GET
     client_request.URI = strtok(NULL, " ");        // route/URI - relative path
     client_request.version = strtok(NULL, "\r\n"); // version, end in \r
@@ -772,14 +780,14 @@ int parse_request(int sock, char *buf)
         client_request.portNo = '\0';
     }
 
-    // printf("REQUEST method: %s\n", client_request.method);
-    // printf("REQUEST URI: %s\n", client_request.URI);
-    // printf("REQUEST version: %s\n", client_request.version);
-    // printf("REQUEST host: %s\n", client_request.hostname);
-    // printf("REQUEST port: %s\n", client_request.portNo);
-    // printf("REQUEST connection: %s\n", client_request.connection);
-    // printf("REQUEST file: %s\n", client_request.file);
-    // printf("\n\n");
+    printf("REQUEST method: %s\n", client_request.method);
+    printf("REQUEST URI: %s\n", client_request.URI);
+    printf("REQUEST version: %s\n", client_request.version);
+    printf("REQUEST host: %s\n", client_request.hostname);
+    printf("REQUEST port: %s\n", client_request.portNo);
+    printf("REQUEST connection: %s\n", client_request.connection);
+    printf("REQUEST file: %s\n", client_request.file);
+    printf("\n\n");
 
     /* generate hash: all we need is the hostname and the filename*/
     char hash_input[strlen(client_request.hostname) + strlen(client_request.file) + 1];
@@ -832,9 +840,6 @@ int parse_request(int sock, char *buf)
         pthread_mutex_unlock(&data->mutex);
     }
 
-    // free(socket_desc);
-    // printf("Done!!!\n");
-    // return NULL;
     return 0;
 }
 
@@ -912,6 +917,18 @@ int main(int argc, char **argv)
     /* SIGINT Graceful Exit Handler*/
     signal(SIGINT, sigint_handler);
     connect_count = 0;
+
+    /*Blocklost*/
+    bl = fopen("./blocklist", "r");
+    if (bl == NULL)
+    {
+        printf("No blocklist provided\n");
+        blocklist = 0;
+    }
+    else
+    {
+        blocklist = 1;
+    }
 
     /* Source: https://stackoverflow.com/questions/19172541/procs-fork-and-mutexes*/
     int prot = PROT_READ | PROT_WRITE;
@@ -1040,6 +1057,12 @@ int main(int argc, char **argv)
     while ((child_p = wait(NULL)) > 0)
     {
         // printf("waiting on: %d\n", child_p);
+    }
+
+    /* If the blocklist file exists we close it at the end*/
+    if (blocklist == 1)
+    {
+        fclose(bl);
     }
     munmap(data, sizeof(data));
     printf("Done\n");
