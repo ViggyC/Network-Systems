@@ -461,7 +461,7 @@ int relay(int client, void *client_args, char *buf)
 
     int header_length = check - header_overflow;
     int left_to_read;
-    printf("Header length for %s: %d\n", client_request->file, header_length);
+    // printf("Header length for %s: %d\n", client_request->file, header_length);
 
     /* Again, if we didnt get a successful response*/
     if (ok == -1)
@@ -492,10 +492,10 @@ int relay(int client, void *client_args, char *buf)
             /* Still write what we have*/
             payload_bytes_recevied = BUFSIZE - header_length;
             bytes_written = fwrite(check, 1, payload_bytes_recevied, cache_fd);
-            printf("Partial payload: wrote %d bytes\n", bytes_written);
+            // printf("Partial payload: wrote %d bytes\n", bytes_written);
             /* We need to keep reading*/
             left_to_read = content_length_size - payload_bytes_recevied;
-            printf("left to read %d bytes more bytes\n", left_to_read);
+            // printf("left to read %d bytes more bytes\n", left_to_read);
             int total_read = 0;
             while (total_read < left_to_read)
             {
