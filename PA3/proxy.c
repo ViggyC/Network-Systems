@@ -284,7 +284,6 @@ void md5_generator(char *original, char *md5_hash)
 /* It just stores the payload in the cache and then returns and then the program will send from cache like PA2*/
 int relay(int client, void *client_args, char *buf)
 {
-    printf("In relay\n");
     HTTP_REQUEST *client_request = (HTTP_REQUEST *)client_args;
     HTTPResponseHeader http_response; /* to send back to client*/
 
@@ -340,7 +339,6 @@ int relay(int client, void *client_args, char *buf)
 
     if (blocklist == 1)
     {
-
         char hostname[254];
         while (fgets(hostname, sizeof(hostname), bl))
         {
@@ -361,7 +359,7 @@ int relay(int client, void *client_args, char *buf)
     }
 
     connfd = socket(AF_INET, SOCK_STREAM, 0);
-    printf("created socket\n");
+    // printf("created socket\n");
     if (connfd == -1)
     {
         printf("socket creation failed...\n");
@@ -395,8 +393,8 @@ int relay(int client, void *client_args, char *buf)
     // printf("%s connecting....\n", client_request->hostname);
 
     int connection_status = connect(connfd, (struct sockaddr *)&httpserver, sizeof(httpserver));
-    printf("Trying to connect\n");
-    // printf("Connection status: %d for %s\n", connection_status, client_request->hostname);
+    // printf("Trying to connect\n");
+    //  printf("Connection status: %d for %s\n", connection_status, client_request->hostname);
     if (connection_status < 0)
     {
         error("Connect() failed:");
@@ -504,6 +502,7 @@ int relay(int client, void *client_args, char *buf)
                 memset(buf, 0, BUFSIZE);
                 bytes_read = recv(connfd, buf, BUFSIZE, 0);
                 // printf("read: %d\n", bytes_read);
+                // sleep(2);
                 total_read += bytes_read;
                 bytes_written = fwrite(buf, 1, bytes_read, cache_fd);
             }
@@ -644,7 +643,7 @@ int send_from_cache(int client, void *client_args)
     /* Do I need this or is connection close in the header enough?*/
     if ((strcmp(http_response.connection, "close") == 0) || (strcmp(http_response.connection, "Close") == 0))
     {
-        // printf("Closing client connection....\n");
+        printf("Closing client connection....\n");
         close(client);
         exit(0);
     }
