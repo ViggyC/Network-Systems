@@ -38,8 +38,8 @@ int sockfd;  /* server socket file descriptor*/
 int check;   /*global flag for children to terminate on graceful exit*/
 int timeout; /* global timeout value*/
 int connect_count;
-FILE *bl;
-int blocklist;
+FILE *bl;      /* Global blocklist file*/
+int blocklist; /* Flag to check if bl exists*/
 
 typedef struct
 {
@@ -287,17 +287,22 @@ int relay(int client, void *client_args, char *buf)
     HTTP_REQUEST *client_request = (HTTP_REQUEST *)client_args;
     HTTPResponseHeader http_response; /* to send back to client*/
 
+    bzero(http_response.version, TEMP_SIZE);
+    bzero(http_response.status, TEMP_SIZE);
+    bzero(http_response.contentType, TEMP_SIZE);
+    bzero(http_response.connection, TEMP_SIZE);
+
     // remote server we are acting as a client towards
     struct sockaddr_in httpserver;
-    struct in_addr **addr_list;
-    struct hostent *server;
-    int connfd;
+    struct in_addr **addr_list = NULL;
+    struct hostent *server = NULL;
+    int connfd = 0;
     char IP[100];
     bzero(IP, sizeof(IP));
-    int n;
-    FILE *cache_fd;
-    ssize_t content_length_size;
-    int ok; // flag for 200 status codes
+    int n = 0;
+    FILE *cache_fd = NULL;
+    ssize_t content_length_size = 0;
+    int ok = 0; // flag for 200 status codes
 
     /* Just get version right away, part of server response*/
     strcpy(http_response.version, client_request->version);
@@ -337,9 +342,12 @@ int relay(int client, void *client_args, char *buf)
     printf("%s resolved to %s\n", client_request->hostname, IP);
     client_request->ip = IP;
 
+    /* If we have a blocklist file in the CWD, otherwise nothing is blocklisted*/
     if (blocklist == 1)
     {
         char hostname[254];
+        /* I open the blocklist in the main process so we need to reset it to the top*/
+        fseek(bl, 0, SEEK_SET);
         while (fgets(hostname, sizeof(hostname), bl))
         {
             // printf("%s\n", hostname);
@@ -398,12 +406,10 @@ int relay(int client, void *client_args, char *buf)
     if (connection_status < 0)
     {
         error("Connect() failed:");
-        client_request->status = 403; // need to verify if this is good to do
-        return 0;
+        client_request->status = 400; // need to verify if this is good to do
+        return 4;
     }
     connect_count++;
-    // printf("Connections made: %d\n", connect_count);
-    // printf("Connection succeeded: %s, %s, %s\n", client_request->hostname, client_request->portNo, client_request->ip);
 
     /* Now we relay the client request to the server*/
     memset(buf, 0, BUFSIZE);
@@ -475,13 +481,20 @@ int relay(int client, void *client_args, char *buf)
     int bytes_written;
     int payload_bytes_recevied;
 
+    /* FILE LOCKING*/
+    struct flock fl;
+    memset(&fl, 0, sizeof(fl));
+    fl.l_type = F_WRLCK; /* F_RDLCK, F_WRLCK, F_UNLCK    */
+    fl.l_pid = getpid(); /* our PID                      */
     /* We have the full payload in the buffer!!*/
-    pthread_mutex_lock(&data->mutex);
+    // pthread_mutex_lock(&data->mutex);
     cache_fd = fopen(cache_file, "wb");
-
+    printf("writer %d has the lock for %s\n", fl.l_pid, client_request->file);
+    fseek(cache_fd, 0, SEEK_SET);
+    fcntl(fileno(cache_fd), F_SETLKW, &fl); /* F_GETLK, F_SETLK, F_SETLKW */
     if (content_length_size != 0)
     {
-        if (BUFSIZE - header_length > content_length_size)
+        if (bytes_read - header_length > content_length_size)
         {
             // we have the full payload, check is the full payload
             bytes_written = fwrite(check, 1, content_length_size, cache_fd);
@@ -490,26 +503,40 @@ int relay(int client, void *client_args, char *buf)
         else
         {
             /* Still write what we have*/
-            payload_bytes_recevied = BUFSIZE - header_length;
+            payload_bytes_recevied = bytes_read - header_length; // PROBLEM HERE BRUHHHHHHHHH
             bytes_written = fwrite(check, 1, payload_bytes_recevied, cache_fd);
-            printf("Partial payload: wrote %d bytes\n", bytes_written);
+            // printf("Partial payload: wrote %d bytes\n", bytes_written);
             /* We need to keep reading*/
             left_to_read = content_length_size - payload_bytes_recevied;
-            printf("left to read %d bytes more bytes\n", left_to_read);
+            // printf("left to read %d bytes more bytes\n", left_to_read);
             int total_read = 0;
             while (total_read < left_to_read)
             {
+                int receive_size = BUFSIZE;
+                if (left_to_read - total_read < BUFSIZE)
+                {
+                    receive_size = left_to_read - total_read;
+                }
                 bzero(buf, BUFSIZE);
-                bytes_read = recv(connfd, buf, BUFSIZE, 0);
+                bytes_read = recv(connfd, buf, receive_size, 0);
                 bytes_written = fwrite(buf, 1, bytes_read, cache_fd);
+                if (bytes_read != bytes_written)
+                    printf("---\n---\n---\n---\n---\n");
                 total_read += bytes_read;
             }
 
             printf("total written to file: %d\n", total_read + payload_bytes_recevied);
         }
     }
+
+    fl.l_type = F_UNLCK; /* set to unlock same region */
+    fcntl(fileno(cache_fd), F_SETLKW, &fl);
+    printf("writer %d released the lock for %s\n", fl.l_pid, client_request->file);
+    bzero(httpResponseHeader, BUFSIZE);
+
+    memset(buf, 0, BUFSIZE);
     fclose(cache_fd);
-    pthread_mutex_unlock(&data->mutex);
+    // pthread_mutex_unlock(&data->mutex);
     return 0;
 }
 
@@ -522,7 +549,7 @@ int check_cache(char *buf)
     bzero(relative_path, sizeof(relative_path));
     strcat(relative_path, "./cache/");
     strcat(relative_path, buf);
-    printf("relative path: %s\n", relative_path);
+    // printf("relative path: %s\n", relative_path);
     /* for checking time modifed*/
     struct stat file_stat;
     DIR *dir = opendir("./cache");
@@ -536,19 +563,19 @@ int check_cache(char *buf)
             time_t file_modified = file_stat.st_mtime; // The most recent time the contents of the file were changed.
             time_t now = time(NULL);                   // https://stackoverflow.com/questions/7550269/what-is-timenull-in-c#:~:text=The%20call%20to%20time(NULL,point%20to%20the%20current%20time.
             double time_left = difftime(now, file_modified);
-            printf("This many seconds have passed since last cache: %f\n", time_left);
+            // printf("This many seconds have passed since last cache: %f\n", time_left);
             if (time_left > timeout)
             {
-                printf("%s expired and in cache, need to ping server again\n", relative_path);
+                // printf("%s expired and in cache, need to ping server again\n", relative_path);
                 return NOT_CACHED;
             }
         }
-        printf("Not expired and in Cache!\n");
+        // printf("Not expired and in Cache!\n");
         return CACHED;
     }
     else
     {
-        printf("%s NOT FOUND, need to ping server!\n", relative_path);
+        // printf("%s NOT FOUND, need to ping server!\n", relative_path);
         return NOT_CACHED;
     }
 }
@@ -559,7 +586,7 @@ int send_from_cache(int client, void *client_args)
 
     HTTP_REQUEST *client_request = (HTTP_REQUEST *)client_args;
     HTTPResponseHeader http_response; /* to send back to client*/
-    FILE *fp;                         // file descriptor for page to send to client
+    FILE *fp = NULL;                  // file descriptor for page to send to client
     ssize_t fsize;
 
     /* Just get version right away, part of server response*/
@@ -577,7 +604,15 @@ int send_from_cache(int client, void *client_args)
     strcat(relative_path, "cache/");
     strcat(relative_path, client_request->hash);
 
+    /* FILE LOCKING*/
+    struct flock fl;
+    memset(&fl, 0, sizeof(fl));
+    fl.l_type = F_RDLCK; /* F_RDLCK, F_WRLCK, F_UNLCK    */
+    fl.l_pid = getpid(); /* our PID                      */
     fp = fopen(relative_path, "rb");
+    fcntl(fileno(fp), F_SETLKW, &fl);
+    printf("reader %d has the lock for %s\n", fl.l_pid, client_request->file);
+
     /* This shouldn't happen but check anyways*/
     if (fp == NULL)
     {
@@ -635,7 +670,9 @@ int send_from_cache(int client, void *client_args)
         memset(payload, 0, BUFSIZE);
         total_payload_sent += bytes_sent;
     }
-    printf("Full response size : %d\n", total_payload_sent);
+
+    fl.l_type = F_UNLCK; /* set to unlock same region */
+    fcntl(fileno(fp), F_SETLKW, &fl);
     fclose(fp);
 
     /* Do I need this or is connection close in the header enough?*/
@@ -666,6 +703,20 @@ int parse_request(int sock, char *buf)
 {
 
     HTTP_REQUEST client_request;
+    client_request.method = NULL;
+    client_request.URI = NULL;
+    client_request.version = NULL;
+    client_request.connection = NULL;
+    client_request.hostname = NULL; // if included in request header
+    client_request.ip = NULL;
+    client_request.domain = NULL;
+    client_request.file = NULL;
+    client_request.portNo = NULL;
+    client_request.messageBody = NULL;
+    client_request.hash = NULL;
+    client_request.blocklist = 0;
+    client_request.keepalive = 0;
+    client_request.status = 0;
 
     printf("Client request:\n%s\n", buf);
     /*Parse client request*/
@@ -692,7 +743,6 @@ int parse_request(int sock, char *buf)
 
     /* If a port is included, we dont want to include it in DNS resolution that is done in relay()*/
     char *host = strtok(client_request.hostname, ":");
-
     char *connection_type = strstr(conn_buf, "Connection: ");
     strtok(connection_type, " ");
     client_request.connection = strtok(NULL, "\r\n");
@@ -757,12 +807,12 @@ int parse_request(int sock, char *buf)
     if (file == NULL || *(file + 1) == '\0')
     {
         client_request.file = "";
-        printf("Client requesting %s\n", client_request.file);
+        // printf("Client requesting %s\n", client_request.file);
     }
     else
     {
         client_request.file = file + 1;
-        printf("Client requesting %s\n", client_request.file);
+        // printf("Client requesting %s\n", client_request.file);
     }
 
     char *port = strchr(client_request.URI, ':');
@@ -770,7 +820,7 @@ int parse_request(int sock, char *buf)
     {
         port = port + 1;
         char *token = strtok(port, "/");
-        printf("Token:%s\n", token);
+        // printf("Token:%s\n", token);
         client_request.portNo = token;
     }
     else
@@ -808,10 +858,16 @@ int parse_request(int sock, char *buf)
     /* this will return NOT_CACHED if its not in the cache directory our the timeout hit*/
     if (cache_result == NOT_CACHED)
     {
+        printf("%s not in cache\n", client_request.file);
         /* Not in cache so lets forward to the server!*/
         int server_response = relay(sock, &client_request, buf);
         /* Relay may return in the case of 403 error, we catch them here*/
-        if (client_request.blocklist == 1 || client_request.status == 403)
+        if (server_response == 4)
+        {
+            BadRequest(sock, &client_request);
+            return 0;
+        }
+        if (client_request.blocklist == 1)
         {
             Forbidden(sock, &client_request);
             client_request.blocklist = 0;
@@ -825,17 +881,17 @@ int parse_request(int sock, char *buf)
         }
         /* What I could do here is just store the payload in the cache and then call send from cache immediately after*/
         // printf("File has been cached..... now sending it from cache\n");
-        pthread_mutex_lock(&data->mutex);
+        // pthread_mutex_lock(&data->mutex);
         send_from_cache(sock, &client_request);
-        pthread_mutex_unlock(&data->mutex);
-        // printf("sent from cache\n");
+        // pthread_mutex_unlock(&data->mutex);
+        //  printf("sent from cache\n");
     }
     else if (cache_result == CACHED)
     {
-        // printf("File already cached.....sending\n");
-        pthread_mutex_lock(&data->mutex);
+        printf("%s already cached\n", client_request.file);
+        // pthread_mutex_lock(&data->mutex);
         send_from_cache(sock, &client_request);
-        pthread_mutex_unlock(&data->mutex);
+        // pthread_mutex_unlock(&data->mutex);
     }
 
     return 0;
@@ -859,7 +915,6 @@ int received_request(int sock)
     /* KEEP ALIVE BABY*/
     while ((n = recv(sock, buf, BUFSIZE, 0)) > 0)
     {
-
         /* reset timeout value*/
         tv.tv_sec = 10;
         tv.tv_usec = 0;
@@ -889,7 +944,7 @@ int received_request(int sock)
     if the server closes the socket on behalf of the client,
     then this will never send because the client already exited*/
     send(sock, timeout, sizeof(timeout), 0);
-    printf("%s\n", timeout);
+    // printf("%s\n", timeout);
     close(sock);
     // printf("Done!!!\n");
     //  return from entry point routine
