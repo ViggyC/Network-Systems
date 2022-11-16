@@ -235,7 +235,7 @@ void *Forbidden(int client, void *client_args)
     char response[BUFSIZE];
     bzero(response, sizeof(response));
     HTTP_REQUEST *client_request = (HTTP_REQUEST *)client_args;
-    sprintf(response, "%s 403 Forbidden\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: %s\r\n\r\n", client_request->version, client_request->connection);
+    sprintf(response, "%s 403 Forbidden\r\nContent-Type: text/plain\r\nContent-Length: 20\r\nConnection: %s\r\n\r\nThis site is blocked", client_request->version, client_request->connection);
     printf("%s\n", response);
     send(client, response, sizeof(response), 0);
     if (strcmp(client_request->connection, "close") == 0)
@@ -444,7 +444,7 @@ int relay(int client, void *client_args, char *buf)
         content_length_size = atoi(length);
     }
 
-    // printf("Content length: %lu\n", content_length_size);
+    printf("Content length for %s: %lu\n", client_request->hostname, content_length_size);
 
     /* If we dont get a successful response, we should NOT cache and send the entire response directly in this function*/
     if (strstr(httpResponseHeader, "200 OK") == NULL)
@@ -492,20 +492,19 @@ int relay(int client, void *client_args, char *buf)
             /* Still write what we have*/
             payload_bytes_recevied = BUFSIZE - header_length;
             bytes_written = fwrite(check, 1, payload_bytes_recevied, cache_fd);
-            // printf("Partial payload: wrote %d bytes\n", bytes_written);
+            printf("Partial payload: wrote %d bytes\n", bytes_written);
             /* We need to keep reading*/
             left_to_read = content_length_size - payload_bytes_recevied;
-            // printf("left to read %d bytes more bytes\n", left_to_read);
+            printf("left to read %d bytes more bytes\n", left_to_read);
             int total_read = 0;
             while (total_read < left_to_read)
             {
-                memset(buf, 0, BUFSIZE);
+                bzero(buf, BUFSIZE);
                 bytes_read = recv(connfd, buf, BUFSIZE, 0);
-                // printf("read: %d\n", bytes_read);
-                // sleep(2);
-                total_read += bytes_read;
                 bytes_written = fwrite(buf, 1, bytes_read, cache_fd);
+                total_read += bytes_read;
             }
+
             printf("total written to file: %d\n", total_read + payload_bytes_recevied);
         }
     }
@@ -578,7 +577,6 @@ int send_from_cache(int client, void *client_args)
     strcat(relative_path, "cache/");
     strcat(relative_path, client_request->hash);
 
-    // pthread_mutex_lock(&data->mutex);
     fp = fopen(relative_path, "rb");
     /* This shouldn't happen but check anyways*/
     if (fp == NULL)
@@ -610,6 +608,7 @@ int send_from_cache(int client, void *client_args)
     }
 
     char response_header[BUFSIZE];
+    bzero(response_header, BUFSIZE);
     if (strcmp(client_request->connection, "keep-alive") == 0 || strcmp(client_request->connection, "Keep-alive") == 0)
     {
         sprintf(response_header, "%s 200 OK\r\nContent-Type: %s\r\nContent-Length: %ld\r\nConnection: %s\r\n\r\n", http_response.version, http_response.contentType, fsize, http_response.connection);
@@ -638,7 +637,6 @@ int send_from_cache(int client, void *client_args)
     }
     printf("Full response size : %d\n", total_payload_sent);
     fclose(fp);
-    // pthread_mutex_unlock(&data->mutex);
 
     /* Do I need this or is connection close in the header enough?*/
     if ((strcmp(http_response.connection, "close") == 0) || (strcmp(http_response.connection, "Close") == 0))
@@ -648,6 +646,7 @@ int send_from_cache(int client, void *client_args)
         // exit(0);
     }
 
+    // process needs to return back to unlock the mutex!
     return 0;
 }
 
