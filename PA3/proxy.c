@@ -398,18 +398,15 @@ int relay(int client, void *client_args, char *buf)
     httpserver.sin_port = htons(port); // assuming port 80 for now
 
     /* Now we can make a connection to the resolved host*/
-    // printf("%s connecting....\n", client_request->hostname);
 
     int connection_status = connect(connfd, (struct sockaddr *)&httpserver, sizeof(httpserver));
-    // printf("Trying to connect\n");
-    //  printf("Connection status: %d for %s\n", connection_status, client_request->hostname);
+
     if (connection_status < 0)
     {
         error("Connect() failed:");
         client_request->status = 400; // need to verify if this is good to do
         return 4;
     }
-    connect_count++;
 
     /* Now we relay the client request to the server*/
     memset(buf, 0, BUFSIZE);
@@ -484,14 +481,17 @@ int relay(int client, void *client_args, char *buf)
     /* FILE LOCKING*/
     struct flock fl;
     memset(&fl, 0, sizeof(fl));
-    fl.l_type = F_WRLCK; /* F_RDLCK, F_WRLCK, F_UNLCK    */
-    fl.l_pid = getpid(); /* our PID                      */
-    /* We have the full payload in the buffer!!*/
-    // pthread_mutex_lock(&data->mutex);
+    fl.l_type = F_WRLCK;    /* F_RDLCK, F_WRLCK, F_UNLCK    */
+    fl.l_whence = SEEK_SET; /* SEEK_SET, SEEK_CUR, SEEK_END */
+    fl.l_start = 0;         /* Offset from l_whence         */
+    fl.l_len = 0;           /* length, 0 = to EOF           */
+    fl.l_pid = getpid();    /* our PID                      */
     cache_fd = fopen(cache_file, "wb");
     printf("writer %d has the lock for %s\n", fl.l_pid, client_request->file);
-    fseek(cache_fd, 0, SEEK_SET);
     fcntl(fileno(cache_fd), F_SETLKW, &fl); /* F_GETLK, F_SETLK, F_SETLKW */
+
+    // pthread_mutex_lock(&data->mutex);
+
     if (content_length_size != 0)
     {
         if (bytes_read - header_length > content_length_size)
@@ -532,9 +532,10 @@ int relay(int client, void *client_args, char *buf)
     fl.l_type = F_UNLCK; /* set to unlock same region */
     fcntl(fileno(cache_fd), F_SETLKW, &fl);
     printf("writer %d released the lock for %s\n", fl.l_pid, client_request->file);
-    bzero(httpResponseHeader, BUFSIZE);
 
+    bzero(httpResponseHeader, BUFSIZE);
     memset(buf, 0, BUFSIZE);
+
     fclose(cache_fd);
     // pthread_mutex_unlock(&data->mutex);
     return 0;
@@ -853,12 +854,12 @@ int parse_request(int sock, char *buf)
     client_request.hash = hash_output;
 
     /*Check cache here before pinging server*/
-
     int cache_result = check_cache(client_request.hash);
+
     /* this will return NOT_CACHED if its not in the cache directory our the timeout hit*/
     if (cache_result == NOT_CACHED)
     {
-        printf("%s not in cache\n", client_request.file);
+        printf("%s NOT IN CACHE\n", client_request.file);
         /* Not in cache so lets forward to the server!*/
         int server_response = relay(sock, &client_request, buf);
         /* Relay may return in the case of 403 error, we catch them here*/
@@ -884,11 +885,10 @@ int parse_request(int sock, char *buf)
         // pthread_mutex_lock(&data->mutex);
         send_from_cache(sock, &client_request);
         // pthread_mutex_unlock(&data->mutex);
-        //  printf("sent from cache\n");
     }
     else if (cache_result == CACHED)
     {
-        printf("%s already cached\n", client_request.file);
+        printf("%s IS CACHED\n", client_request.file);
         // pthread_mutex_lock(&data->mutex);
         send_from_cache(sock, &client_request);
         // pthread_mutex_unlock(&data->mutex);
