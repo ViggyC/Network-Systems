@@ -1,14 +1,15 @@
 /*
  * dfc.c DFS TCP client
+ * usage: ./dfc <command> [filename.....filename]
  * Author: Vignesh Chandrasekhar
- */
+*/
+
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
 #include <openssl/md5.h>
-
 #include <fcntl.h>
 #include <pthread.h>
 #include <assert.h>
@@ -26,15 +27,14 @@
 
 #define BUFSIZE 8192
 #define CONF_SIZE 1024
-
 #define DFS1 1
 #define DFS2 2
 #define DFS3 3
 #define DFS4 4
 
-
-int socket_array[1];
-int live_servers[1];//global array to see which servers we can retrieve/put files to 
+int socket_array[4];
+int live_servers[4];//global array to see which servers we can retrieve/put files to 
+int chunks_received[4];
 int y; //global num for number of servers in conf file
 int num_servers = 0;
 
@@ -85,11 +85,11 @@ int md5_hash(char * filename){
     MD5_Final (c,&mdContext);
     for(int i = 0; i < MD5_DIGEST_LENGTH; i++) {
         int md5Char = (int)c[i];
-        x = (x*16 + md5Char) % y;
+        x = (x*16 + md5Char);
     }
     fclose (inFile);
     printf("Got hash\n");
-    return x;
+    return x%y;
 }
 
 /* This function makes a connect() to every server in the dfc.conf file*/
@@ -153,21 +153,39 @@ void send_chunk(char *chunk, char*filename, char chunk_num, int dfs_num, int chu
 
 }
 
-void write_chunk(int dfs_server, FILE * fp){
+void write_chunk(int dfs_server, FILE * fp, int chunk_size){
+    int n;
+    int total_received = 0;
+    //printf("Chunk size: %d\n", chunk_size);
+    char chunk[chunk_size];
+    bzero(chunk, chunk_size);
+    printf("dfs server: %d\n", dfs_server);
+    n = send(socket_array[dfs_server-1], "Ready", strlen("Ready"), 0);
+    printf("Bytes sent to server: %d\n", n);
+    while(total_received< chunk_size){
+        bzero(chunk, chunk_size);
+        n = recv(socket_array[dfs_server-1], chunk, chunk_size, 0);
+        printf("Bytes received from server: %d\n", n);
+        total_received +=n;
+        n = fwrite(chunk, 1, n, fp);
+    }
 
+    printf("Total received: %d\n", total_received);
+    
 }
 
 int chunk_query(char *filename, char chunk_num, int dfs_server){
     int sent;
     int received;
     char buf[BUFSIZE];
-    printf("Querying  %s-%c from dfs%d\n", filename, chunk_num, dfs_server+1);
+    bzero(buf, BUFSIZE);
+    printf("Querying  %s-%c from dfs%d\n", filename, chunk_num, dfs_server);
     char get_request[BUFSIZE];
     bzero(get_request, BUFSIZE);
     sprintf(get_request, "Command: get\r\nFilename: %s\r\nChunk: %c\r\n\r\n", filename, chunk_num);
     sent= send(socket_array[dfs_server-1], get_request, sizeof(get_request), 0);
     received = recv(socket_array[dfs_server-1], buf, BUFSIZE, 0 );
-    //printf("Got %d bytes from client\n", received);
+    printf("Got %d bytes from client\n", received);
     printf("Got %s  from client\n", buf);
     if(strcmp(buf, "Not Found")==0){
         return 0;
@@ -251,9 +269,16 @@ int main(int argc, char **argv)
 
     /* If we cant connect to the number of servers in the config file minus 1, we cant do the PUT operation*/
     /* Ex: 4 serverss in conf file but we can only connect to 2 -> cannot PUT*/
-    if( (connections_made <num_servers-1) && strcmp(command, "put")==0){
+    if( (connections_made <num_servers) && strcmp(command, "put")==0){
         for(int i=0; i<argc-2; i++){
             printf("%s put failed\n", argv[i+2]);
+        }
+        return 1;
+    }
+
+    if( (connections_made <num_servers-1) && strcmp(command, "get")==0){
+        for(int i=0; i<argc-2; i++){
+            printf("%s get failed\n", argv[i+2]);
         }
         return 1;
     }
@@ -270,17 +295,27 @@ int main(int argc, char **argv)
             printf("x: %d\n", x);
 
             /* Logic: for each chunk, go through every live dfs server and see if it has the chunk, get its size*/
-            for(int i=1; i<2; i++){
+            for(int i=1; i<5; i++){
                 for(int dfs=1; dfs<5; dfs++){
-                    int chunk_size = chunk_query(filename,i +'0', dfs);
-                    printf("Chunk size: %d\n", chunk_size);
-                    if(chunk_size>0){
-                        /* Now we can get the chunk and write to the file*/
-                        write_chunk(dfs, fp);
-                        break;
+                    /* Server should be up before we attempt to get from it*/
+                    if(live_servers[dfs-1]==1){
+                        int chunk_size = chunk_query(filename,i +'0', dfs);
+                        if(chunk_size>0){
+                            /* Now we can get the chunk and write to the file*/
+                            write_chunk(dfs, fp, chunk_size);
+                            chunks_received[i-1] = 1;
+                            break;
+                        }
                     }
                 }
+                if(chunks_received[i-1] != 1){
+                    printf("%s is incomplete\n", filename);
+                    remove(filename);
+                    break; //we can stop querying
+                }
             }
+
+            fclose(fp);
 
         }
 
@@ -456,7 +491,6 @@ int main(int argc, char **argv)
 
 
     }else if(strcmp(command, "ls")==0 ||strcmp(command, "LS") ==0){
-        send(socket_array[0], command, sizeof(command), 0);
 
     }
 
