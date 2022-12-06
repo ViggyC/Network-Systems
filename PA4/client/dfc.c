@@ -26,7 +26,7 @@
 #include <dirent.h>
 
 #define BUFSIZE 8192
-#define MAX_FILES 100
+#define MAX_FILES 512
 #define MAX_FILE_LENGTH 255
 #define CONF_SIZE 1024
 #define DFS1 1
@@ -98,8 +98,7 @@ int md5_hash(char * filename){
         x  = x*16 + md5Char;
     }
     fclose (inFile);
-    printf("Got hash\n");
-    printf("hash: %c\n", x);
+    //printf("hash: %c\n", x);
     return abs(x%y);
 }
 
@@ -168,7 +167,7 @@ void send_chunk(char *chunk, char*filename, char chunk_num, int dfs_num, int chu
     // use memcpy() to attach chunk to header
     memcpy(packet + strlen(packet), chunk, chunck_length);
     n = send(socket_array[dfs_num-1], packet, sizeof(packet), 0);
-    //printf("Sent %d header bytes\n", n);
+    printf("Sent chunk %d bytes\n", chunck_length);
 
 }
 
@@ -364,7 +363,7 @@ int main(int argc, char **argv)
     }
 
     command  = argv[1];
-    if( strcmp(command, "get")==0 ||strcmp(command, "put") ==0 || strcmp(command, "ls")==0 ){
+    if( strcmp(command, "get")==0 ||strcmp(command, "put") ==0 || strcmp(command, "list")==0 || strcmp(command, "ls")==0){
         //do nothing
     }else{
         printf("Invalid request\n");
@@ -441,6 +440,7 @@ int main(int argc, char **argv)
                     /* Server should be up before we attempt to get from it*/
                     if(live_servers[dfs-1]==1){
                         int chunk_size = chunk_query(filename,i +'0', dfs);
+                        printf("Chunk size: %d\n", chunk_size);
                         if(chunk_size>0){
                             /* Now we can get the chunk and write to the file*/
                             write_chunk(dfs, fp, chunk_size);
@@ -491,6 +491,7 @@ int main(int argc, char **argv)
             char p2[fsize/4];
             char p3[fsize/4];
             char p4[fsize - 3*(fsize/4)]; //remainder if not divisible by 4
+
             fread(p1, sizeof(p1), 1, f);
             fread(p2, sizeof(p2), 1, f);
             fread(p3, sizeof(p3), 1, f);
@@ -636,7 +637,7 @@ int main(int argc, char **argv)
         }
 
 
-    }else if(strcmp(command, "ls")==0 ||strcmp(command, "LS") ==0){
+    }else if(strcmp(command, "list")==0 ||strcmp(command, "ls") ==0){
         
         FILE * dfs_list;
         dfs_list = fopen("./dfs_list", "wb");
@@ -647,7 +648,7 @@ int main(int argc, char **argv)
         for(int i=0; i<num_servers; i++){
             if(live_servers[i]==1){
                 //printf("i: %d\n", i);
-                n = send(socket_array[i], "ls", sizeof("ls"), 0);
+                n = send(socket_array[i], "list", sizeof("list"), 0);
                 //printf("bytes sent: %d\n", n);
                 bytes_received = recv(socket_array[i],ls_buf, sizeof(ls_buf),0 );
                 //printf("bytes received: %d\n", bytes_received);

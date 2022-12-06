@@ -40,6 +40,9 @@ void *service_request(void *socket_desc)
     int sock = *(int *)socket_desc;
     char buf[BUFSIZE];
     char temp_buf[BUFSIZE];
+    bzero(temp_buf, sizeof(temp_buf));
+    bzero(buf, sizeof(buf));
+
     int left_to_read;
     int payload_bytes_recevied;
     int header_length;
@@ -58,6 +61,8 @@ void *service_request(void *socket_desc)
         int done = 0;
         /* Server can continually receive mul*/
         n = recv(sock, buf, BUFSIZE, 0);
+        printf("Received %d bytes\n", n);
+        //printf("Client Request:\n%s\n", buf);
         if(n<0){
             error("Error in recv: ");
         }
@@ -67,11 +72,7 @@ void *service_request(void *socket_desc)
             continue;
         }
 
-      
-        strcpy(temp_buf, buf);
-        //printf("Received %d bytes\n", n);
-        printf("Client Request:\n%s\n", buf);
-
+        strncpy(temp_buf, buf, n);
         /* If client has PUT all files then it will send an ACK*/
         if(strcmp(buf, "put done")==0 || strstr(buf, "put done")!=NULL){
             printf("Client PUT successful\n");
@@ -92,7 +93,7 @@ void *service_request(void *socket_desc)
             return NULL;
         }
 
-        if(strcmp(buf , "ls")!=0){
+        if(strcmp(buf , "ls")!=0 && strcmp(buf , "list")!=0){
             strtok(temp_buf, " " );
             command = strtok(NULL, "\r\n");
             printf("cmd: %s\n", command);
@@ -101,7 +102,7 @@ void *service_request(void *socket_desc)
             printf("cmd: %s\n", command);
         }
         
-        if(strcmp(buf, "ls")!=0){
+        if(strcmp(buf, "list")!=0 && strcmp(buf, "ls")!=0){
             fname = strstr(temp_buf, "Filename: ");
             strtok(fname, " ");
             filename = strtok(NULL, "\r\n");
@@ -138,16 +139,27 @@ void *service_request(void *socket_desc)
             strcat(relative_path, "-");
             strcat(relative_path, chunk);
             printf("Relative path: %s\n", relative_path);
+
+            /* FILE LOCKING*/
+            struct flock fl;
+            memset(&fl, 0, sizeof(fl));
+            fl.l_type = F_WRLCK;    /* F_RDLCK, F_WRLCK, F_UNLCK    */
+            fl.l_whence = SEEK_SET; /* SEEK_SET, SEEK_CUR, SEEK_END */
+            fl.l_start = 0;         /* Offset from l_whence         */
+            fl.l_len = 0;           /* length, 0 = to EOF           */
+            fl.l_pid = getpid();    /* our PID                      */
             FILE * fp = fopen(relative_path, "wb");
+            printf("writer %d has the lock for %s\n", fl.l_pid, relative_path);
+            fcntl(fileno(fp), F_SETLKW, &fl); /* F_GETLK, F_SETLK, F_SETLKW */
             int bytes_written;
-            //printf("n: %d, header length: %d, chunk size: %d\n", n, header_length, chunk_size);
+            printf("n: %d, header length: %d, chunk size: %d\n", n, header_length, chunk_size);
             /*Write what we have*/
             payload_bytes_recevied = n - header_length; 
             bytes_written = fwrite(check, 1, payload_bytes_recevied, fp);
-            //printf("Partial payload: wrote %d bytes\n", bytes_written);
+            printf("Partial payload: wrote %d bytes\n", bytes_written);
             /* We need to keep reading*/
             left_to_read = chunk_size - payload_bytes_recevied;
-            //printf("left to read %d bytes more bytes\n", left_to_read);
+            printf("left to read %d bytes more bytes\n", left_to_read);
             int total_read = 0;
             while (total_read < left_to_read)
             {
@@ -164,7 +176,10 @@ void *service_request(void *socket_desc)
                 total_read += n;
             }
 
-            //printf("total written to file: %d\n", total_read + payload_bytes_recevied);
+            printf("total written to file: %d\n", total_read + payload_bytes_recevied);
+            fl.l_type = F_UNLCK; /* set to unlock same region */
+            fcntl(fileno(fp), F_SETLKW, &fl);
+            printf("writer %d released the lock for %s\n", fl.l_pid, relative_path);
             fclose(fp);
 
             /* Send an acknowledement before client can send next chunk so we dont cram the buffer*/
@@ -198,15 +213,15 @@ void *service_request(void *socket_desc)
                 bytes_sent = send(sock, size_buf, sizeof(size_buf), 0);
                 /* If dfs has the chunk, we can receive another request from the client for the actual chunk*/
                 bytes_receieved = recv(sock, recv_buf, sizeof(recv_buf), 0);
-                //printf("bytes recieved: %d\n", bytes_receieved);
-                //printf("received: %s\n", recv_buf);
+                printf("bytes recieved: %d\n", bytes_receieved);
+                printf("received: %s\n", recv_buf);
                 /* Read chunk into buffer*/
                 char chunk[fsize];
                 bzero(chunk, fsize);
                 fread(chunk, fsize, 1, fp);
                 fclose(fp);
                 bytes_sent = send(sock, chunk, fsize, 0);
-                //printf("Chunk bytes sent: %d\n", bytes_sent); //need to do a recv() all on client
+                printf("Chunk bytes sent: %d\n", bytes_sent); //need to do a recv() all on client
             }else{
                 printf("%s does not exist.....ping a different server\n", relative_path);
                 bytes_sent = send(sock, "Not Found", sizeof("Not Found"), 0);
