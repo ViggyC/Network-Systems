@@ -26,11 +26,21 @@
 #include <dirent.h>
 
 #define BUFSIZE 8192
+#define MAX_FILES 100
+#define MAX_FILE_LENGTH 255
 #define CONF_SIZE 1024
 #define DFS1 1
 #define DFS2 2
 #define DFS3 3
 #define DFS4 4
+
+/* For LIST*/
+struct DFS_LIST {
+   char * filename;   
+   char chunk;
+};
+
+
 
 int socket_array[4];
 int live_servers[4];//global array to see which servers we can retrieve/put files to 
@@ -85,11 +95,12 @@ int md5_hash(char * filename){
     MD5_Final (c,&mdContext);
     for(int i = 0; i < MD5_DIGEST_LENGTH; i++) {
         int md5Char = (int)c[i];
-        x = (x*16 + md5Char);
+        x  = x*16 + md5Char;
     }
     fclose (inFile);
     printf("Got hash\n");
-    return x%y;
+    printf("hash: %c\n", x);
+    return abs(x%y);
 }
 
 /* This function makes a connect() to every server in the dfc.conf file*/
@@ -131,8 +142,16 @@ int dfs_connect(int port, int server_num){
         
     }
     else
-        printf("connected to the server dfs%d\n", server_num+1);
+        printf("connected to the server dfs%d on port %d\n", server_num+1, port);
         live_servers[server_num] = 1; //if 1, server is available
+
+    struct timeval tv;
+    tv.tv_sec = 1;
+    tv.tv_usec = 0;
+    if (setsockopt(socket_array[server_num], SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
+    {
+        perror("Error in socket timeout setting: ");
+    }
 
     return 0;
 }
@@ -149,7 +168,7 @@ void send_chunk(char *chunk, char*filename, char chunk_num, int dfs_num, int chu
     // use memcpy() to attach chunk to header
     memcpy(packet + strlen(packet), chunk, chunck_length);
     n = send(socket_array[dfs_num-1], packet, sizeof(packet), 0);
-    printf("Sent %d header bytes\n", n);
+    //printf("Sent %d header bytes\n", n);
 
 }
 
@@ -161,7 +180,7 @@ void write_chunk(int dfs_server, FILE * fp, int chunk_size){
     bzero(chunk, chunk_size);
     printf("dfs server: %d\n", dfs_server);
     n = send(socket_array[dfs_server-1], "Ready", strlen("Ready"), 0);
-    printf("Bytes sent to server: %d\n", n);
+    //printf("Bytes sent to server: %d\n", n);
     while(total_received< chunk_size){
         bzero(chunk, chunk_size);
         n = recv(socket_array[dfs_server-1], chunk, chunk_size, 0);
@@ -188,11 +207,133 @@ int chunk_query(char *filename, char chunk_num, int dfs_server){
     printf("Got %d bytes from client\n", received);
     printf("Got %s  from client\n", buf);
     if(strcmp(buf, "Not Found")==0){
+        //remove(filename);
         return 0;
     }
     return atoi(buf);
 
 }
+
+int check_array(char *file, char file_arr[MAX_FILES][MAX_FILE_LENGTH], int len){
+    //printf("length of array: %d\n", len);
+    for (int i=0; i<len; i++){
+        //printf("bruh: %s\n",file_arr[i]);
+        if(file_arr[i]!=NULL && strcmp(file, file_arr[i])==0 ){
+            //printf("%s already exists\n", file);
+            return 0;
+        }
+    }
+    return 1;
+}
+
+void list(FILE *f){
+    f = fopen("./dfs_list", "rb");
+    char UNIQUE_FILES[MAX_FILES][MAX_FILE_LENGTH]; //character array to hold unique files
+    bzero(UNIQUE_FILES, sizeof(UNIQUE_FILES)); //character array to hold unique files
+
+    char line[255];
+    char chunk;
+    /* I open the blocklist in the main process so we need to reset it to the top*/
+    fseek(f, 0, SEEK_SET);
+    int i = 0;
+    int arrLen = sizeof(UNIQUE_FILES) / sizeof(UNIQUE_FILES[0]);
+    while (fgets(line, sizeof(line), f))
+    {
+        bool new_file = false;
+        line[strlen(line) - 1] = '\0';
+        if (strcmp(line, ".")!=0 && strcmp(line, "..")!=0 && strcmp(line, "\0")!=0 && strcmp(line, "none")!=0)
+        {
+            chunk = line[strlen(line)-1];
+            //printf("chunk: %c\n", chunk);
+            line[strlen(line) - 2] = '\0';
+            //printf("File: %s\n", line);
+
+            if(check_array(line, UNIQUE_FILES, arrLen)==1){
+                strcpy(UNIQUE_FILES[i], line);
+                //printf("Adding new file: %s\n", UNIQUE_FILES[i]);
+            }
+        }
+        i++;
+    }
+    //printf("Unique files:\n");
+    fclose(f);
+    int count = 0;
+    for (int i=0; i<arrLen; i++){
+        //printf("val: %s\n",UNIQUE_FILES[i] );
+        if(strlen(UNIQUE_FILES[i])>0){
+            count++;
+            //printf("%s\n" ,UNIQUE_FILES[i]);
+        }
+    }
+
+    //printf("Count: %d\n", count);
+    char file_list[count][MAX_FILE_LENGTH];
+    for(int j=0; j<count; j++){
+        for(int i=0; i<arrLen; i++){
+            if(strlen(UNIQUE_FILES[i])>0){
+                strcpy(file_list[j], UNIQUE_FILES[i]);
+                bzero(UNIQUE_FILES[i], strlen(UNIQUE_FILES[i]));
+                break;
+            }
+        }
+    }
+
+
+    //printf("final list\n");
+    // for(int i=0; i<count; i++){
+    //     printf("%s\n" ,file_list[i]);
+    // }
+
+    /* For each file see if each chunk is in the ./dfs_list file*/
+    f = fopen("./dfs_list", "rb");
+    fseek(f, 0, SEEK_END);
+    size_t fsize = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char list_buffer[fsize];
+    bzero(list_buffer, fsize);
+    int bytes_read = fread(list_buffer, fsize, 1, f);
+    for(int file=0; file<count; file++){
+        char *filename = file_list[file];
+        int chunks_available[4];
+        int complete = 1;
+        bzero(chunks_available, 4);
+        //printf("file: %s\n", filename);
+        for(int chunk=1; chunk<5; chunk++){
+            char c = chunk +'0';
+            //printf("chunk: %c\n", c);
+            char file_chunk[strlen(filename) + 2]; //+1 for "-" +1 for chunk value
+            bzero(file_chunk,strlen(filename) + 2 );
+            strcpy(file_chunk, filename);
+            strcat(file_chunk, "-");
+            strncat(file_chunk, &c, 1);
+            //printf("file_chunk: %s\n", file_chunk);
+            if(strstr(list_buffer, file_chunk)!=NULL){
+                //printf("found chunk: %s\n", file_chunk);
+                chunks_available[chunk-1]=1;
+            }else{
+                chunks_available[chunk-1]=0;
+            }
+
+        }
+        for(int i=0; i<4 ;i++){
+            if(chunks_available[i]==0){
+                printf("%s [incomplete]\n", filename);
+                complete=0;
+                break;
+            }
+        }
+        
+        if(complete ==1){
+            printf("%s\n", filename);
+        }
+        
+    }
+
+
+  
+}
+
+
 
 int main(int argc, char **argv)
 {
@@ -252,7 +393,7 @@ int main(int argc, char **argv)
         getline(&line, &len, conf_fd);
         line[strlen(line) - 1] = '\0';
         dfs_port = atoi(strchr(line, ':') + 1);
-        printf("Connecting to port: %d\n", dfs_port);
+        //printf("Connecting to port: %d\n", dfs_port);
         if(dfs_connect(dfs_port, i)==0){
             connections_made++;
         } 
@@ -262,10 +403,11 @@ int main(int argc, char **argv)
 
     /***********************CONNECTIONS MADE*************************/
 
-    printf("Connections made to required servers: %d\n", connections_made);
+    //printf("Connections made to required servers: %d\n", connections_made);
     for(int i=0; i<num_servers; i++){
         printf("DFS%d status: %d\n", i+1, live_servers[i]);
     }
+    printf("\n");
 
     /* If we cant connect to the number of servers in the config file minus 1, we cant do the PUT operation*/
     /* Ex: 4 serverss in conf file but we can only connect to 2 -> cannot PUT*/
@@ -293,7 +435,6 @@ int main(int argc, char **argv)
             FILE *fp = fopen(filename, "wb");
             int x = md5_hash(filename);
             printf("x: %d\n", x);
-
             /* Logic: for each chunk, go through every live dfs server and see if it has the chunk, get its size*/
             for(int i=1; i<5; i++){
                 for(int dfs=1; dfs<5; dfs++){
@@ -314,9 +455,15 @@ int main(int argc, char **argv)
                     break; //we can stop querying
                 }
             }
-
             fclose(fp);
+        }
 
+        for(int i=0; i<num_servers; i++){
+            if(live_servers[i]==1){
+                n = send(socket_array[i], "get done", strlen("get done"), 0);
+                //printf("Sent %d bytes\n", n);
+
+            }
         }
 
     }else if(strcmp(command, "put")==0 ||strcmp(command, "PUT") ==0){
@@ -478,19 +625,49 @@ int main(int argc, char **argv)
 
                 }
             }
-
         }
 
         for(int i=0; i<num_servers; i++){
             if(live_servers[i]==1){
-                n = send(socket_array[i], "done", strlen("done"), 0);
-                printf("Sent %d bytes\n", n);
+                n = send(socket_array[i], "put done", strlen("put done"), 0);
+                //printf("Sent %d bytes\n", n);
 
             }
         }
 
 
     }else if(strcmp(command, "ls")==0 ||strcmp(command, "LS") ==0){
+        
+        FILE * dfs_list;
+        dfs_list = fopen("./dfs_list", "wb");
+        int bytes_received;
+        int written;
+        char ls_buf[1024];
+        /* Send a ls request to each connected dfs server*/
+        for(int i=0; i<num_servers; i++){
+            if(live_servers[i]==1){
+                //printf("i: %d\n", i);
+                n = send(socket_array[i], "ls", sizeof("ls"), 0);
+                //printf("bytes sent: %d\n", n);
+                bytes_received = recv(socket_array[i],ls_buf, sizeof(ls_buf),0 );
+                //printf("bytes received: %d\n", bytes_received);
+                written = fwrite(ls_buf, 1, bytes_received, dfs_list);
+            }else{
+                printf("DFS%d is down\n", i+1);
+            }
+        }
+        fclose(dfs_list);
+        printf("DFS files:\n");
+
+        list(dfs_list);
+        for(int i=0; i<num_servers; i++){
+            if(live_servers[i]==1){
+                n = send(socket_array[i], "ls done", strlen("ls done"), 0);
+                //printf("Sent %d bytes\n", n);
+
+            }
+        }
+
 
     }
 

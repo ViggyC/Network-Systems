@@ -1,4 +1,4 @@
 make:
-	-gcc dfs.c -lpthread -fsanitize=thread -o dfs
+	-gcc dfs.c -lpthread -fsanitize=thread -g -o dfs
 clean:
 	-rm dfs

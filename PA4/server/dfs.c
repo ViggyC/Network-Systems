@@ -40,14 +40,12 @@ void *service_request(void *socket_desc)
     int sock = *(int *)socket_desc;
     char buf[BUFSIZE];
     char temp_buf[BUFSIZE];
-    char header_buf[BUFSIZE];
-    char filename_buf[BUFSIZE];
-    char chunk_buf[BUFSIZE];
     int left_to_read;
     int payload_bytes_recevied;
     int header_length;
     char *header_overflow;
     char *check;
+    char *fname;
     while(1){
         memset(buf, 0, BUFSIZE);
         int n;
@@ -71,30 +69,49 @@ void *service_request(void *socket_desc)
 
       
         strcpy(temp_buf, buf);
-        strcpy(header_buf, buf);
         //printf("Received %d bytes\n", n);
-        printf("Received:\n%s\n", buf);
+        printf("Client Request:\n%s\n", buf);
 
-        /* If client has put all files then it will send an ACK*/
-        if(strcmp(buf, "done")==0 || strstr(buf, "done")!=NULL){
+        /* If client has PUT all files then it will send an ACK*/
+        if(strcmp(buf, "put done")==0 || strstr(buf, "put done")!=NULL){
             printf("Client PUT successful\n");
-            continue;
+            close(sock);
+            return NULL;
         }
 
-        /* If we see the header carriage return in the buffer, we have to parse it*/
-        strtok(temp_buf, " " );
-        command = strtok(NULL, "\r\n");
-        //printf("cmd: %s\n", command);
+        /* If client has PUT all files then it will send an ACK*/
+        if(strcmp(buf, "get done")==0 || strstr(buf, "get done")!=NULL){
+            printf("Client GET successful\n");
+            close(sock);
+            return NULL;
+        }
 
-        char *fname = strstr(temp_buf, "Filename: ");
-        strtok(fname, " ");
-        filename = strtok(NULL, "\r\n");
-        //printf("fname: %s\n", filename);
+        if(strcmp(buf, "ls done")==0 || strstr(buf, "ls done")!=NULL){
+            printf("Client LS successful\n");
+            close(sock);
+            return NULL;
+        }
 
-        char *c = strstr(temp_buf, "Chunk: ");
-        strtok(c, " ");
-        chunk = strtok(NULL, "\r\n");
-        //printf("chonk: %s\n", chunk);
+        if(strcmp(buf , "ls")!=0){
+            strtok(temp_buf, " " );
+            command = strtok(NULL, "\r\n");
+            printf("cmd: %s\n", command);
+        }else{
+            command = "ls";
+            printf("cmd: %s\n", command);
+        }
+        
+        if(strcmp(buf, "ls")!=0){
+            fname = strstr(temp_buf, "Filename: ");
+            strtok(fname, " ");
+            filename = strtok(NULL, "\r\n");
+            //printf("fname: %s\n", filename);
+
+            char *c = strstr(temp_buf, "Chunk: ");
+            strtok(c, " ");
+            chunk = strtok(NULL, "\r\n");
+            //printf("chonk: %s\n", chunk);
+        }
         
         if(strcmp(command, "put")==0 || strcmp(command, "PUT") ==0){
             char *content_length = strstr(buf, "Size: ");
@@ -155,7 +172,6 @@ void *service_request(void *socket_desc)
             send_bytes = send(sock, "PUT successful", sizeof("PUT successful"), 0);
             //printf("Bytes sent: %d\n", send_bytes);
 
-
         }else if(strcmp(command, "get")==0){
 
             char relative_path[BUFSIZE]; // ./dfs#/filename.partition
@@ -194,12 +210,34 @@ void *service_request(void *socket_desc)
             }else{
                 printf("%s does not exist.....ping a different server\n", relative_path);
                 bytes_sent = send(sock, "Not Found", sizeof("Not Found"), 0);
+                /*Server will go back up to while loop to get next chunk request*/
             }
 
-            printf("END OF GET\n");
-
         }else if(strcmp(command, "ls")==0){
+            printf("Client wants to list\n");
+            DIR *directory;
+            struct dirent *entry;
+            char full_ls[BUFSIZE];
+            bzero(full_ls, sizeof(full_ls));
+            directory = opendir(dir);
+            if (directory == NULL)
+            {
+                return NULL;
+            }
 
+            /* Keep reading directory entries */
+            while ((entry = readdir(directory)) != NULL)
+            {
+                // printf("%s\n", entry->d_name);
+                /* Source for concatenating strings */
+                // https://stackoverflow.com/questions/2218290/concatenate-char-array-in-c
+                strcat(full_ls, entry->d_name);
+                strcat(full_ls, "\n");
+            }
+            printf("length of dir: %lu\n", strlen(full_ls));
+            full_ls[strlen(full_ls)] = '\0';
+            printf("%s\n", full_ls);
+            n = send(sock, full_ls, strlen(full_ls), 0);
         }
     }
 
