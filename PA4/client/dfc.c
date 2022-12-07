@@ -160,14 +160,17 @@ void send_chunk(char *chunk, char*filename, char chunk_num, int dfs_num, int chu
     int n;
     char header[BUFSIZE];
     bzero(header, sizeof(header));
+    time_t timestamp = (int)time(NULL);
+    struct tm *ptm = localtime(&timestamp);
+    //printf("Timestamp: %d\n", ptm->tm_sec);
     sprintf(header, "Command: put\r\nFilename: %s\r\nChunk: %c\r\nSize: %d\r\n\r\n", filename, chunk_num, chunck_length);
-    printf("%s\n", header);
+    printf("Header:\n%s\n", header);
     char packet[chunck_length + strlen(header)];
     strcpy(packet, header);
     // use memcpy() to attach chunk to header
     memcpy(packet + strlen(packet), chunk, chunck_length);
     n = send(socket_array[dfs_num-1], packet, sizeof(packet), 0);
-    printf("Sent chunk %d bytes\n", chunck_length);
+    //printf("Sent chunk %d bytes\n", chunck_length);
 
 }
 
@@ -201,6 +204,7 @@ int chunk_query(char *filename, char chunk_num, int dfs_server){
     char get_request[BUFSIZE];
     bzero(get_request, BUFSIZE);
     sprintf(get_request, "Command: get\r\nFilename: %s\r\nChunk: %c\r\n\r\n", filename, chunk_num);
+    printf("Header:\n%s\n", get_request);
     sent= send(socket_array[dfs_server-1], get_request, sizeof(get_request), 0);
     received = recv(socket_array[dfs_server-1], buf, BUFSIZE, 0 );
     printf("Got %d bytes from client\n", received);
@@ -417,12 +421,12 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    if( (connections_made <num_servers-1) && strcmp(command, "get")==0){
-        for(int i=0; i<argc-2; i++){
-            printf("%s get failed\n", argv[i+2]);
-        }
-        return 1;
-    }
+    // if( (connections_made <num_servers-1) && strcmp(command, "get")==0){
+    //     for(int i=0; i<argc-2; i++){
+    //         printf("%s get failed\n", argv[i+2]);
+    //     }
+    //     exit(0);
+    // }
 
     
     if(strcmp(command, "get")==0 ||strcmp(command, "GET") ==0){

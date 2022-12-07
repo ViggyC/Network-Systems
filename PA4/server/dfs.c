@@ -149,17 +149,17 @@ void *service_request(void *socket_desc)
             fl.l_len = 0;           /* length, 0 = to EOF           */
             fl.l_pid = getpid();    /* our PID                      */
             FILE * fp = fopen(relative_path, "wb");
-            printf("writer %d has the lock for %s\n", fl.l_pid, relative_path);
+            //printf("writer %d has the lock for %s\n", fl.l_pid, relative_path);
             fcntl(fileno(fp), F_SETLKW, &fl); /* F_GETLK, F_SETLK, F_SETLKW */
             int bytes_written;
-            printf("n: %d, header length: %d, chunk size: %d\n", n, header_length, chunk_size);
+            //printf("n: %d, header length: %d, chunk size: %d\n", n, header_length, chunk_size);
             /*Write what we have*/
             payload_bytes_recevied = n - header_length; 
             bytes_written = fwrite(check, 1, payload_bytes_recevied, fp);
-            printf("Partial payload: wrote %d bytes\n", bytes_written);
+            //printf("Partial payload: wrote %d bytes\n", bytes_written);
             /* We need to keep reading*/
             left_to_read = chunk_size - payload_bytes_recevied;
-            printf("left to read %d bytes more bytes\n", left_to_read);
+            //printf("left to read %d bytes more bytes\n", left_to_read);
             int total_read = 0;
             while (total_read < left_to_read)
             {
@@ -176,10 +176,10 @@ void *service_request(void *socket_desc)
                 total_read += n;
             }
 
-            printf("total written to file: %d\n", total_read + payload_bytes_recevied);
+            //printf("total written to file: %d\n", total_read + payload_bytes_recevied);
             fl.l_type = F_UNLCK; /* set to unlock same region */
             fcntl(fileno(fp), F_SETLKW, &fl);
-            printf("writer %d released the lock for %s\n", fl.l_pid, relative_path);
+            //printf("writer %d released the lock for %s\n", fl.l_pid, relative_path);
             fclose(fp);
 
             /* Send an acknowledement before client can send next chunk so we dont cram the buffer*/
@@ -356,9 +356,5 @@ int main(int argc, char **argv)
             return 1;
         }
     }
-
-
-
     return 0;
-
 }
