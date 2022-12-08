@@ -44,7 +44,6 @@ struct DFS_LIST {
 
 int socket_array[4];
 int live_servers[4];//global array to see which servers we can retrieve/put files to 
-int chunks_received[4];
 int y; //global num for number of servers in conf file
 int num_servers = 0;
 
@@ -104,18 +103,17 @@ int md5_hash(char * filename){
 
 /* This function makes a connect() to every server in the dfc.conf file*/
 /* This should be called in a loop with some int array holding all the server indexes*/
-int dfs_connect(int port, int server_num){
+int dfs_connect(int port, char * hostname, int server_num){
     int serverlen;
     socket_array[server_num]; //i +1
     struct sockaddr_in serveraddr; // we cast this to struct sockaddr
     struct hostent *server;
-    char *hostname;         // from user input
     socket_array[server_num] = socket(AF_INET, SOCK_STREAM, 0);
     if (socket_array[server_num] < 0)
         error("ERROR opening socket");
 
     /* gethostbyname: get the server's DNS entry */
-    server = gethostbyname("127.0.0.1"); 
+    server = gethostbyname(hostname); 
     if (server == NULL)
     {
         fprintf(stderr, "ERROR, no such host as %s\n", hostname);
@@ -125,10 +123,11 @@ int dfs_connect(int port, int server_num){
     /* build the server's Internet address */
     bzero((char *)&serveraddr, sizeof(serveraddr));
     serveraddr.sin_family = AF_INET;                              // internet domains
+
     bcopy((char *)server->h_addr_list[0],                         // note: h_addr = h_addrlist[0]
           (char *)&serveraddr.sin_addr.s_addr, server->h_length); // need to figureout what this is doing
     serveraddr.sin_port = htons(port);
-    // printf("Server h_name: %s\n", server->h_name);
+    //printf("Server h_name: %s\n", server->h_name);
 
     /* send the message to the server */
     serverlen = sizeof(serveraddr);
@@ -141,7 +140,7 @@ int dfs_connect(int port, int server_num){
         
     }
     else
-        printf("connected to the server dfs%d on port %d\n", server_num+1, port);
+        printf("connected to dfs%d on %s:%d\n", server_num+1, hostname, port);
         live_servers[server_num] = 1; //if 1, server is available
 
     struct timeval tv;
@@ -160,9 +159,9 @@ void send_chunk(char *chunk, char*filename, char chunk_num, int dfs_num, int chu
     int n;
     char header[BUFSIZE];
     bzero(header, sizeof(header));
-    time_t timestamp = (int)time(NULL);
+    time_t timestamp = (int)time(0);
     struct tm *ptm = localtime(&timestamp);
-    //printf("Timestamp: %d\n", ptm->tm_sec);
+    printf("Timestamp: %d\n", ptm->tm_sec);
     sprintf(header, "Command: put\r\nFilename: %s\r\nChunk: %c\r\nSize: %d\r\n\r\n", filename, chunk_num, chunck_length);
     printf("Header:\n%s\n", header);
     char packet[chunck_length + strlen(header)];
@@ -180,18 +179,18 @@ void write_chunk(int dfs_server, FILE * fp, int chunk_size){
     //printf("Chunk size: %d\n", chunk_size);
     char chunk[chunk_size];
     bzero(chunk, chunk_size);
-    printf("dfs server: %d\n", dfs_server);
+    //printf("dfs server: %d\n", dfs_server);
     n = send(socket_array[dfs_server-1], "Ready", strlen("Ready"), 0);
     //printf("Bytes sent to server: %d\n", n);
     while(total_received< chunk_size){
         bzero(chunk, chunk_size);
         n = recv(socket_array[dfs_server-1], chunk, chunk_size, 0);
-        printf("Bytes received from server: %d\n", n);
+        //printf("Bytes received from server: %d\n", n);
         total_received +=n;
         n = fwrite(chunk, 1, n, fp);
     }
 
-    printf("Total received: %d\n", total_received);
+    //printf("Total received: %d\n", total_received);
     
 }
 
@@ -200,15 +199,15 @@ int chunk_query(char *filename, char chunk_num, int dfs_server){
     int received;
     char buf[BUFSIZE];
     bzero(buf, BUFSIZE);
-    printf("Querying  %s-%c from dfs%d\n", filename, chunk_num, dfs_server);
+    //printf("Querying  %s-%c from dfs%d\n", filename, chunk_num, dfs_server);
     char get_request[BUFSIZE];
     bzero(get_request, BUFSIZE);
     sprintf(get_request, "Command: get\r\nFilename: %s\r\nChunk: %c\r\n\r\n", filename, chunk_num);
-    printf("Header:\n%s\n", get_request);
+    //printf("Header:\n%s\n", get_request);
     sent= send(socket_array[dfs_server-1], get_request, sizeof(get_request), 0);
     received = recv(socket_array[dfs_server-1], buf, BUFSIZE, 0 );
-    printf("Got %d bytes from client\n", received);
-    printf("Got %s  from client\n", buf);
+    //printf("Got %d bytes from client\n", received);
+    //printf("Got %s  from client\n", buf);
     if(strcmp(buf, "Not Found")==0){
         //remove(filename);
         return 0;
@@ -375,13 +374,13 @@ int main(int argc, char **argv)
     }
 
     num_files = argc -2; //1 for executable, 1 for command (GET, PUT, LS)
-    int num_servers = get_num_servers();
-    printf("Number of servers in config file: %d\n", num_servers);
+    int num_servers = 4;
+    //printf("Number of servers in config file: %d\n", num_servers);
 
     /* Open config file and store port numbers of the DFS servers*/
     /* Pass these port numbers to connect()*/
     FILE * conf_fd;
-    conf_fd = fopen("./dfc.conf", "r");
+    conf_fd = fopen(strcat(getenv("HOME"), "/dfc.conf"), "r");
     fseek(conf_fd, 0, SEEK_END);
     fseek(conf_fd, 0, SEEK_SET);
     if (conf_fd == NULL)
@@ -391,26 +390,33 @@ int main(int argc, char **argv)
     }
 
     int dfs_port;
+    char * dfs_host;
+    char temp_line[255];
     int connections_made = 0;
     for(int i=0; i<num_servers; i++){
         getline(&line, &len, conf_fd);
         line[strlen(line) - 1] = '\0';
-        dfs_port = atoi(strchr(line, ':') + 1);
+        strcpy(temp_line, line);
+        dfs_host = strrchr(line, ' ') +1;
+        char *host = strtok(dfs_host, ":");
+        //printf("Connecting to host: %s\n", host);
+        dfs_port = atoi(strchr(temp_line, ':') + 1);
         //printf("Connecting to port: %d\n", dfs_port);
-        if(dfs_connect(dfs_port, i)==0){
+        if(dfs_connect(dfs_port,host, i)==0){
             connections_made++;
         } 
     }
     y = connections_made; //available servers
+    printf("\n");
 
 
     /***********************CONNECTIONS MADE*************************/
 
     //printf("Connections made to required servers: %d\n", connections_made);
-    for(int i=0; i<num_servers; i++){
-        printf("DFS%d status: %d\n", i+1, live_servers[i]);
-    }
-    printf("\n");
+    // for(int i=0; i<num_servers; i++){
+    //     printf("DFS%d status: %d\n", i+1, live_servers[i]);
+    // }
+    // printf("\n");
 
     /* If we cant connect to the number of servers in the config file minus 1, we cant do the PUT operation*/
     /* Ex: 4 serverss in conf file but we can only connect to 2 -> cannot PUT*/
@@ -421,44 +427,48 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    // if( (connections_made <num_servers-1) && strcmp(command, "get")==0){
-    //     for(int i=0; i<argc-2; i++){
-    //         printf("%s get failed\n", argv[i+2]);
-    //     }
-    //     exit(0);
-    // }
-
     
     if(strcmp(command, "get")==0 ||strcmp(command, "GET") ==0){
         char * filename;
         for(int i=0; i<argc-2; i++){
+            int chunks_received[4];
             filename = argv[i+2];
-            printf("get %s\n", filename);   
+            int success = 1;
+            //printf("get %s\n", filename);   
             /* get length of file so we can split it up*/
             FILE *fp = fopen(filename, "wb");
-            int x = md5_hash(filename);
-            printf("x: %d\n", x);
+       
             /* Logic: for each chunk, go through every live dfs server and see if it has the chunk, get its size*/
             for(int i=1; i<5; i++){
                 for(int dfs=1; dfs<5; dfs++){
                     /* Server should be up before we attempt to get from it*/
                     if(live_servers[dfs-1]==1){
                         int chunk_size = chunk_query(filename,i +'0', dfs);
-                        printf("Chunk size: %d\n", chunk_size);
+                        //printf("%s Chunk size: %d\n", filename, chunk_size);
                         if(chunk_size>0){
                             /* Now we can get the chunk and write to the file*/
                             write_chunk(dfs, fp, chunk_size);
                             chunks_received[i-1] = 1;
                             break;
+                        }else{
+                            chunks_received[i-1] = 0;
                         }
                     }
                 }
                 if(chunks_received[i-1] != 1){
                     printf("%s is incomplete\n", filename);
+                    success = 0;
                     remove(filename);
                     break; //we can stop querying
                 }
             }
+
+            if(success==1){
+                printf("GET %s successful\n", filename);
+            }
+          
+            
+
             fclose(fp);
         }
 
@@ -485,7 +495,7 @@ int main(int argc, char **argv)
             fseek(f, 0, SEEK_END);
             size_t fsize = ftell(f);
             fseek(f, 0, SEEK_SET);
-            printf("%s is %lu bytes long\n", filename, fsize);
+            //printf("%s is %lu bytes long\n", filename, fsize);
             int x = md5_hash(filename);
             printf("x: %d\n", x);
 
@@ -662,7 +672,7 @@ int main(int argc, char **argv)
             }
         }
         fclose(dfs_list);
-        printf("DFS files:\n");
+        printf("Here are the files distributed among active servers:\n\n");
 
         list(dfs_list);
         for(int i=0; i<num_servers; i++){

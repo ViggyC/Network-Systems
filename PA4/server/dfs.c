@@ -27,6 +27,8 @@
 #define BUFSIZE 8192
 char dir[6]; /* File system directory for dfs<n>*/
 
+pthread_mutex_t file_lock;
+
 void error(char *msg)
 {
     perror(msg);
@@ -61,15 +63,14 @@ void *service_request(void *socket_desc)
         int done = 0;
         /* Server can continually receive mul*/
         n = recv(sock, buf, BUFSIZE, 0);
-        printf("Received %d bytes\n", n);
+        //printf("Received %d bytes\n", n);
         //printf("Client Request:\n%s\n", buf);
         if(n<0){
             error("Error in recv: ");
         }
 
-        /* We dont want to read 0 bytes */
         if(n==0){
-            continue;
+            break;
         }
 
         strncpy(temp_buf, buf, n);
@@ -96,10 +97,10 @@ void *service_request(void *socket_desc)
         if(strcmp(buf , "ls")!=0 && strcmp(buf , "list")!=0){
             strtok(temp_buf, " " );
             command = strtok(NULL, "\r\n");
-            printf("cmd: %s\n", command);
+            //printf("cmd: %s\n", command);
         }else{
             command = "ls";
-            printf("cmd: %s\n", command);
+            //printf("cmd: %s\n", command);
         }
         
         if(strcmp(buf, "list")!=0 && strcmp(buf, "ls")!=0){
@@ -148,6 +149,7 @@ void *service_request(void *socket_desc)
             fl.l_start = 0;         /* Offset from l_whence         */
             fl.l_len = 0;           /* length, 0 = to EOF           */
             fl.l_pid = getpid();    /* our PID                      */
+            pthread_mutex_lock(&file_lock);
             FILE * fp = fopen(relative_path, "wb");
             //printf("writer %d has the lock for %s\n", fl.l_pid, relative_path);
             fcntl(fileno(fp), F_SETLKW, &fl); /* F_GETLK, F_SETLK, F_SETLKW */
@@ -155,6 +157,7 @@ void *service_request(void *socket_desc)
             //printf("n: %d, header length: %d, chunk size: %d\n", n, header_length, chunk_size);
             /*Write what we have*/
             payload_bytes_recevied = n - header_length; 
+
             bytes_written = fwrite(check, 1, payload_bytes_recevied, fp);
             //printf("Partial payload: wrote %d bytes\n", bytes_written);
             /* We need to keep reading*/
@@ -181,6 +184,8 @@ void *service_request(void *socket_desc)
             fcntl(fileno(fp), F_SETLKW, &fl);
             //printf("writer %d released the lock for %s\n", fl.l_pid, relative_path);
             fclose(fp);
+            pthread_mutex_unlock(&file_lock);
+
 
             /* Send an acknowledement before client can send next chunk so we dont cram the buffer*/
             int send_bytes;
@@ -205,6 +210,7 @@ void *service_request(void *socket_desc)
             if( access(relative_path, F_OK) ==0 ){
                 printf("%s exists\n", relative_path);
                 FILE * fp = fopen(relative_path, "rb");
+                //FILE * fp  = popen("ls | grep {relative_path} | sort -r","rb");
                 fseek(fp, 0, SEEK_END);
                 fsize = ftell(fp);
                 fseek(fp, 0, SEEK_SET);
@@ -213,23 +219,23 @@ void *service_request(void *socket_desc)
                 bytes_sent = send(sock, size_buf, sizeof(size_buf), 0);
                 /* If dfs has the chunk, we can receive another request from the client for the actual chunk*/
                 bytes_receieved = recv(sock, recv_buf, sizeof(recv_buf), 0);
-                printf("bytes recieved: %d\n", bytes_receieved);
-                printf("received: %s\n", recv_buf);
+                //printf("bytes recieved: %d\n", bytes_receieved);
+                //printf("received: %s\n", recv_buf);
                 /* Read chunk into buffer*/
                 char chunk[fsize];
                 bzero(chunk, fsize);
                 fread(chunk, fsize, 1, fp);
                 fclose(fp);
                 bytes_sent = send(sock, chunk, fsize, 0);
-                printf("Chunk bytes sent: %d\n", bytes_sent); //need to do a recv() all on client
+                //printf("Chunk bytes sent: %d\n", bytes_sent); //need to do a recv() all on client
             }else{
-                printf("%s does not exist.....ping a different server\n", relative_path);
+                //printf("%s does not exist.....ping a different server\n", relative_path);
                 bytes_sent = send(sock, "Not Found", sizeof("Not Found"), 0);
                 /*Server will go back up to while loop to get next chunk request*/
             }
 
         }else if(strcmp(command, "ls")==0){
-            printf("Client wants to list\n");
+            //printf("Client wants to list\n");
             DIR *directory;
             struct dirent *entry;
             char full_ls[BUFSIZE];
@@ -249,7 +255,7 @@ void *service_request(void *socket_desc)
                 strcat(full_ls, entry->d_name);
                 strcat(full_ls, "\n");
             }
-            printf("length of dir: %lu\n", strlen(full_ls));
+            //printf("length of dir: %lu\n", strlen(full_ls));
             full_ls[strlen(full_ls)] = '\0';
             printf("%s\n", full_ls);
             n = send(sock, full_ls, strlen(full_ls), 0);
@@ -281,6 +287,11 @@ int main(int argc, char **argv)
     char server_dir[5];
     int client_socket;             /* each process will have its own*/
     int *new_sock;
+
+    if(pthread_mutex_init(&file_lock, NULL) != 0){
+      printf("Cannot init mutex\n");
+      return 1;
+    }
     
 
     if (argc != 3)
