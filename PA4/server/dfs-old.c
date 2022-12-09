@@ -60,9 +60,6 @@ void *service_request(void *socket_desc)
         char *command;
         char *chunk;
         int chunk_size;
-        char * client; //for get for same filename different content
-        int timestamp;
-        char timestamp_buf[255];
         int done = 0;
         /* Server can continually receive mul*/
         n = recv(sock, buf, BUFSIZE, 0);
@@ -123,20 +120,10 @@ void *service_request(void *socket_desc)
             char *length = strstr(content_length, " ");
             length = length + 1;
             chunk_size = atoi(length);
-            //printf("chunk size: %d\n", chunk_size);
-            char *ts = strstr(buf, "Timestamp: ");
-            char *time = strstr(ts, " ");
-            time = time + 1;
-            timestamp = atoi(time);
-            timestamp = abs(timestamp);
-            //printf("time stamp: %d\n", timestamp);
-            sprintf(timestamp_buf, "%d", timestamp);
-            printf("time stamp: %s\n", timestamp_buf);
-
-
+            //printf("chonk size: %d\n", chunk_size);
         }
         
-        /* Parsing for partial writes!!!!!*/
+
         header_overflow = buf;
         check = strstr(buf, "\r\n\r\n");
         check = check + 4;
@@ -152,8 +139,6 @@ void *service_request(void *socket_desc)
             strcat(relative_path, filename);
             strcat(relative_path, "-");
             strcat(relative_path, chunk);
-            strcat(relative_path, "-");
-            strcat(relative_path, timestamp_buf);
             printf("Relative path: %s\n", relative_path);
 
             /* FILE LOCKING*/
@@ -208,78 +193,46 @@ void *service_request(void *socket_desc)
             //printf("Bytes sent: %d\n", send_bytes);
 
         }else if(strcmp(command, "get")==0){
-            char file_chunk[BUFSIZE]; // ./dfs#/filename.partition
-            bzero(file_chunk, BUFSIZE);
+
+            char relative_path[BUFSIZE]; // ./dfs#/filename.partition
             size_t fsize;
             int bytes_sent;
             int bytes_receieved;
             char recv_buf[BUFSIZE];
             bzero(recv_buf, BUFSIZE);
             /* We will need to recv again to recieve the chunk*/
-            //strcpy(relative_path, dir);
-            //strcat(relative_path, "/");
-            strcat(file_chunk, filename);
-            strcat(file_chunk, "-");
-            strcat(file_chunk, chunk);
-            //printf("Relative path: %s\n", file_chunk);
-   
-            char file_bullshit[BUFSIZE];
-            bzero(file_bullshit, BUFSIZE);
-            strcat(file_bullshit, "ls ");
-            strcat(file_bullshit, dir);
-            strcat(file_bullshit, " | grep ");
-            strcat(file_bullshit, file_chunk);
-            strcat(file_bullshit, " | sort -r");
-            //printf("file bullshit: %s\n", file_bullshit);
-            FILE * fp  = popen(file_bullshit,"r");
-            char buf[BUFSIZE];
-            bzero(buf, BUFSIZE);
-            fscanf(fp, "%[^\n]", buf);
-            printf("buf: %s\n", buf);
-            printf("chunk: %s\n", chunk);
-
-            char file_check[BUFSIZE];
-            bzero(file_check, BUFSIZE);
-         
-
-            if(strstr(buf, file_chunk)==NULL){
-                //printf("%s does not exist.....ping a different server\n", relative_path);
-                //printf("not found\n");
-                bytes_sent = send(sock, "Not Found", sizeof("Not Found"), 0);
-                /*Server will go back up to while loop to get next chunk request*/
-            }else{
-                printf("%s exists\n", file_chunk);
-                char relative_path[BUFSIZE];
-                bzero(relative_path, BUFSIZE);
-                strcat(relative_path, dir);
-                strcat(relative_path, "/");
-                strcat(relative_path, buf);
-                printf("Relative path: %s\n", relative_path);
-                FILE * file = fopen(relative_path, "rb");
-                fseek(file, 0, SEEK_END);
-                fsize = ftell(file);
-                fseek(file, 0, SEEK_SET);
+            strcpy(relative_path, dir);
+            strcat(relative_path, "/");
+            strcat(relative_path, filename);
+            strcat(relative_path, "-");
+            strcat(relative_path, chunk);
+            printf("Relative path: %s\n", relative_path);
+            if( access(relative_path, F_OK) ==0 ){
+                printf("%s exists\n", relative_path);
+                FILE * fp = fopen(relative_path, "rb");
+                //FILE * fp  = popen("ls | grep {relative_path} | sort -r","rb");
+                fseek(fp, 0, SEEK_END);
+                fsize = ftell(fp);
+                fseek(fp, 0, SEEK_SET);
                 char size_buf[1024];
                 sprintf(size_buf, "%lu", fsize);
                 bytes_sent = send(sock, size_buf, sizeof(size_buf), 0);
                 /* If dfs has the chunk, we can receive another request from the client for the actual chunk*/
-                bytes_receieved = recv(sock, recv_buf, sizeof(recv_buf), 0); //"ready"
+                bytes_receieved = recv(sock, recv_buf, sizeof(recv_buf), 0);
                 //printf("bytes recieved: %d\n", bytes_receieved);
                 //printf("received: %s\n", recv_buf);
                 /* Read chunk into buffer*/
                 char chunk[fsize];
                 bzero(chunk, fsize);
-                fread(chunk, fsize, 1, file);
-                fclose(file);
+                fread(chunk, fsize, 1, fp);
+                fclose(fp);
                 bytes_sent = send(sock, chunk, fsize, 0);
-            }
-            
                 //printf("Chunk bytes sent: %d\n", bytes_sent); //need to do a recv() all on client
-            // }else{
-            //     //printf("%s does not exist.....ping a different server\n", relative_path);
-            //     bytes_sent = send(sock, "Not Found", sizeof("Not Found"), 0);
-            //     /*Server will go back up to while loop to get next chunk request*/
-            // }
+            }else{
+                //printf("%s does not exist.....ping a different server\n", relative_path);
+                bytes_sent = send(sock, "Not Found", sizeof("Not Found"), 0);
+                /*Server will go back up to while loop to get next chunk request*/
+            }
 
         }else if(strcmp(command, "ls")==0){
             //printf("Client wants to list\n");
