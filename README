@@ -1,8 +1,8 @@
 # Network Systems
 
-This repo contains the programming assignments for CSCI4273 - Network Systems
+Programming assignments for CSCI4273 - Network Systems
 
-## Programs
+Programmer: Vignesh Chandrasekhar (super dope guy)
 
 # PA1
 
@@ -22,4 +22,10 @@ Implements keep-alive connection for socket resuablility
 
 HTTP Web Proxy Server
 
-TODO
+Handles simultaneous client connections and servers web pages from remote servers or from local cache if file has been requested within certain timeout period.
+
+# PA4
+
+Distributed File System
+
+Client Server TCP program that distributed file chunks across DFS servers, and then reassembles them upon invokation

@@ -124,15 +124,16 @@ void *service_request(void *socket_desc)
             length = length + 1;
             chunk_size = atoi(length);
             //printf("chunk size: %d\n", chunk_size);
-            char *ts = strstr(buf, "Timestamp: ");
+            char bruh[BUFSIZE];
+            bzero(bruh, BUFSIZE);
+            strcpy(bruh, buf);
+            char *ts = strstr(bruh, "Timestamp: ");
             char *time = strstr(ts, " ");
             time = time + 1;
-            timestamp = atoi(time);
-            timestamp = abs(timestamp);
-            //printf("time stamp: %d\n", timestamp);
-            sprintf(timestamp_buf, "%d", timestamp);
-            printf("time stamp: %s\n", timestamp_buf);
-
+            strtok(time, ".");
+            //printf("milliseconds: %s\n", time);
+            strcpy(timestamp_buf, time);
+            //printf("timestamp buf: %s\n", timestamp_buf);
 
         }
         
@@ -156,23 +157,12 @@ void *service_request(void *socket_desc)
             strcat(relative_path, timestamp_buf);
             printf("Relative path: %s\n", relative_path);
 
-            /* FILE LOCKING*/
-            struct flock fl;
-            memset(&fl, 0, sizeof(fl));
-            fl.l_type = F_WRLCK;    /* F_RDLCK, F_WRLCK, F_UNLCK    */
-            fl.l_whence = SEEK_SET; /* SEEK_SET, SEEK_CUR, SEEK_END */
-            fl.l_start = 0;         /* Offset from l_whence         */
-            fl.l_len = 0;           /* length, 0 = to EOF           */
-            fl.l_pid = getpid();    /* our PID                      */
             pthread_mutex_lock(&file_lock);
             FILE * fp = fopen(relative_path, "wb");
-            //printf("writer %d has the lock for %s\n", fl.l_pid, relative_path);
-            fcntl(fileno(fp), F_SETLKW, &fl); /* F_GETLK, F_SETLK, F_SETLKW */
             int bytes_written;
             //printf("n: %d, header length: %d, chunk size: %d\n", n, header_length, chunk_size);
             /*Write what we have*/
             payload_bytes_recevied = n - header_length; 
-
             bytes_written = fwrite(check, 1, payload_bytes_recevied, fp);
             //printf("Partial payload: wrote %d bytes\n", bytes_written);
             /* We need to keep reading*/
@@ -193,11 +183,7 @@ void *service_request(void *socket_desc)
                     printf("---\n---\n---\n---\n---\n");
                 total_read += n;
             }
-
             //printf("total written to file: %d\n", total_read + payload_bytes_recevied);
-            fl.l_type = F_UNLCK; /* set to unlock same region */
-            fcntl(fileno(fp), F_SETLKW, &fl);
-            //printf("writer %d released the lock for %s\n", fl.l_pid, relative_path);
             fclose(fp);
             pthread_mutex_unlock(&file_lock);
 
@@ -215,14 +201,14 @@ void *service_request(void *socket_desc)
             int bytes_receieved;
             char recv_buf[BUFSIZE];
             bzero(recv_buf, BUFSIZE);
-            /* We will need to recv again to recieve the chunk*/
-            //strcpy(relative_path, dir);
-            //strcat(relative_path, "/");
+
+            /* We grep on {filename-chunk#} to pull the most recent one across the directories*/
+            /* This is for the case where two clients put the same filename but different content*/
             strcat(file_chunk, filename);
             strcat(file_chunk, "-");
-            strcat(file_chunk, chunk);
-            //printf("Relative path: %s\n", file_chunk);
-   
+            strcat(file_chunk, chunk);   
+
+            /* Setting up Linux command for getting most recent filename-chunk#*/
             char file_bullshit[BUFSIZE];
             bzero(file_bullshit, BUFSIZE);
             strcat(file_bullshit, "ls ");
@@ -230,21 +216,17 @@ void *service_request(void *socket_desc)
             strcat(file_bullshit, " | grep ");
             strcat(file_bullshit, file_chunk);
             strcat(file_bullshit, " | sort -r");
-            //printf("file bullshit: %s\n", file_bullshit);
+
+            /* popen() returns a pipe with the data we requested: last writer filename-chunk#*/
             FILE * fp  = popen(file_bullshit,"r");
             char buf[BUFSIZE];
             bzero(buf, BUFSIZE);
             fscanf(fp, "%[^\n]", buf);
-            printf("buf: %s\n", buf);
-            printf("chunk: %s\n", chunk);
-
-            char file_check[BUFSIZE];
-            bzero(file_check, BUFSIZE);
+            printf("File: %s\n", buf);
          
-
             if(strstr(buf, file_chunk)==NULL){
                 //printf("%s does not exist.....ping a different server\n", relative_path);
-                //printf("not found\n");
+                /* client will see that the chunk was not found so it will hit up a different dfs server*/
                 bytes_sent = send(sock, "Not Found", sizeof("Not Found"), 0);
                 /*Server will go back up to while loop to get next chunk request*/
             }else{
@@ -255,6 +237,7 @@ void *service_request(void *socket_desc)
                 strcat(relative_path, "/");
                 strcat(relative_path, buf);
                 printf("Relative path: %s\n", relative_path);
+                pthread_mutex_lock(&file_lock);
                 FILE * file = fopen(relative_path, "rb");
                 fseek(file, 0, SEEK_END);
                 fsize = ftell(file);
@@ -271,15 +254,9 @@ void *service_request(void *socket_desc)
                 bzero(chunk, fsize);
                 fread(chunk, fsize, 1, file);
                 fclose(file);
+                pthread_mutex_unlock(&file_lock);
                 bytes_sent = send(sock, chunk, fsize, 0);
             }
-            
-                //printf("Chunk bytes sent: %d\n", bytes_sent); //need to do a recv() all on client
-            // }else{
-            //     //printf("%s does not exist.....ping a different server\n", relative_path);
-            //     bytes_sent = send(sock, "Not Found", sizeof("Not Found"), 0);
-            //     /*Server will go back up to while loop to get next chunk request*/
-            // }
 
         }else if(strcmp(command, "ls")==0){
             //printf("Client wants to list\n");
