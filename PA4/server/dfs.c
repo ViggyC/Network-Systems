@@ -276,8 +276,11 @@ void *service_request(void *socket_desc)
                 // printf("%s\n", entry->d_name);
                 /* Source for concatenating strings */
                 // https://stackoverflow.com/questions/2218290/concatenate-char-array-in-c
-                strcat(full_ls, entry->d_name);
-                strcat(full_ls, "\n");
+                if(strcmp(entry->d_name, ".")!=0 && strcmp(entry->d_name, "..")!=0){
+                    strcat(full_ls, entry->d_name);
+                    strcat(full_ls, "\n");
+                }
+                
             }
             //printf("length of dir: %lu\n", strlen(full_ls));
             full_ls[strlen(full_ls)] = '\0';
@@ -286,7 +289,6 @@ void *service_request(void *socket_desc)
         }
     }
 
-    /* Right now this is only hit for PUT*/
     return NULL;
 
 }

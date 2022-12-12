@@ -252,109 +252,6 @@ int check_array(char *file, char file_arr[MAX_FILES][MAX_FILE_LENGTH], int len){
     return 1;
 }
 
-void list(FILE *f){
-    f = fopen("./dfs_list", "rb");
-    char UNIQUE_FILES[MAX_FILES][MAX_FILE_LENGTH]; //character array to hold unique files
-    bzero(UNIQUE_FILES, sizeof(UNIQUE_FILES)); //character array to hold unique files
-
-    char line[255];
-    char chunk;
-    /* I open the blocklist in the main process so we need to reset it to the top*/
-    fseek(f, 0, SEEK_SET);
-    int i = 0;
-    int arrLen = sizeof(UNIQUE_FILES) / sizeof(UNIQUE_FILES[0]);
-    while (fgets(line, sizeof(line), f))
-    {
-        bool new_file = false;
-        line[strlen(line) - 1] = '\0';
-        if (strcmp(line, ".")!=0 && strcmp(line, "..")!=0 && strcmp(line, "\0")!=0 && strcmp(line, "none")!=0)
-        {
-            //printf("line: %s\n", line);
-            char *file = strtok(line, "-");
-            //printf("file: %s\n", file);
-            if(check_array(file, UNIQUE_FILES, arrLen)==1){
-                strcpy(UNIQUE_FILES[i], file);
-                //printf("Adding new file: %s\n", UNIQUE_FILES[i]);
-            }
-        }
-        i++;
-    }
-    //printf("Unique files:\n");
-    fclose(f);
-    int count = 0;
-    for (int i=0; i<arrLen; i++){
-        //printf("val: %s\n",UNIQUE_FILES[i] );
-        if(strlen(UNIQUE_FILES[i])>0){
-            count++;
-            //printf("%s\n" ,UNIQUE_FILES[i]);
-        }
-    }
-
-    //printf("Count: %d\n", count);
-    char file_list[count][MAX_FILE_LENGTH];
-    for(int j=0; j<count; j++){
-        for(int i=0; i<arrLen; i++){
-            if(strlen(UNIQUE_FILES[i])>0){
-                strcpy(file_list[j], UNIQUE_FILES[i]);
-                bzero(UNIQUE_FILES[i], strlen(UNIQUE_FILES[i]));
-                break;
-            }
-        }
-    }
-
-
-    //printf("final list\n");
-    // for(int i=0; i<count; i++){
-    //     printf("%s\n" ,file_list[i]);
-    // }
-
-    /* For each file see if each chunk is in the ./dfs_list file*/
-    f = fopen("./dfs_list", "rb");
-    fseek(f, 0, SEEK_END);
-    size_t fsize = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    char list_buffer[fsize];
-    bzero(list_buffer, fsize);
-    int bytes_read = fread(list_buffer, fsize, 1, f);
-    for(int file=0; file<count; file++){
-        char *filename = file_list[file];
-        int chunks_available[4];
-        int complete = 1;
-        bzero(chunks_available, 4);
-        //printf("file: %s\n", filename);
-        for(int chunk=1; chunk<5; chunk++){
-            char c = chunk +'0';
-            //printf("chunk: %c\n", c);
-            char file_chunk[strlen(filename) + 2]; //+1 for "-" +1 for chunk value
-            bzero(file_chunk,strlen(filename) + 2 );
-            strcpy(file_chunk, filename);
-            strcat(file_chunk, "-");
-            strncat(file_chunk, &c, 1);
-            //printf("file_chunk: %s\n", file_chunk);
-            if(strstr(list_buffer, file_chunk)!=NULL){
-                //printf("found chunk: %s\n", file_chunk);
-                chunks_available[chunk-1]=1;
-            }else{
-                chunks_available[chunk-1]=0;
-            }
-
-        }
-        for(int i=0; i<4 ;i++){
-            if(chunks_available[i]==0){
-                printf("%s [incomplete]\n", filename);
-                complete=0;
-                break;
-            }
-        }
-        
-        if(complete ==1){
-            printf("%s\n", filename);
-        }
-        
-    }
-}
-
-
 int main(int argc, char **argv)
 {
 
@@ -842,10 +739,16 @@ int main(int argc, char **argv)
                 printf("DFS%d is down\n", i+1);
             }
         }
-        fclose(dfs_list);
+        fseek(dfs_list, 0, SEEK_END);
+        fseek(dfs_list, 0, SEEK_SET);
         printf("Here are the files distributed among active servers:\n\n");
+        FILE * bashfp = popen("cat dfs_list | rev | cut -d '-' -f 1 --complement | rev | sort | uniq | rev | cut -d '-' -f -1 --complement | rev | uniq -c | awk -F\\  '{if ($1 == \"4\") print $2; else print $2\" [Incomplete]\"}' ", "r");
+        char buf[BUFSIZE];
+        bzero(buf, BUFSIZE);
+        fread(buf, 1, BUFSIZE, bashfp);
+        printf("%s\n", buf);
+        fclose(dfs_list);
 
-        list(dfs_list);
         for(int i=0; i<num_servers; i++){
             if(live_servers[i]==1){
                 n = send(socket_array[i], "ls done", strlen("ls done"), 0);
