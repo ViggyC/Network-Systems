@@ -318,7 +318,7 @@ int relay(int client, void *client_args, char *buf)
     const char *file_extention = get_filename_ext(client_request->file);
     getContentType(http_response.contentType, file_extention);
 
-    // printf("Get host by name: %s\n", client_request->hostname);
+    printf("Get host by name: %s\n", client_request->hostname);
     server = gethostbyname(client_request->hostname);
     /* If above fails, send 404*/
     if (server)
