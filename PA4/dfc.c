@@ -179,16 +179,17 @@ void send_chunk(char *chunk, char*filename, char chunk_num, int dfs_num, int chu
     int n;
     char header[BUFSIZE];
     bzero(header, sizeof(header));
-    
+    printf("chunk legnth: %d\n", chunck_length);
     //printf("Timestamp: %f\n", time_in_mill);
     sprintf(header, "Command: put\r\nFilename: %s\r\nChunk: %c\r\nSize: %d\r\nTimestamp: %f\r\n\r\n", filename, chunk_num, chunck_length, time_in_mill);
     printf("Header:\n%s\n", header);
-    char packet[chunck_length + strlen(header)];
+    char * packet = malloc(chunck_length + strlen(header));
     strcpy(packet, header);
     // use memcpy() to attach chunk to header
     memcpy(packet + strlen(packet), chunk, chunck_length);
-    n = send(socket_array[dfs_num-1], packet, sizeof(packet), 0);
-    //printf("Sent chunk %d bytes\n", chunck_length);
+    n = send(socket_array[dfs_num-1], packet, chunck_length + strlen(header), 0);
+    printf("Sent chunk %d bytes\n", n);
+    free(packet);
 
 }
 
@@ -196,7 +197,7 @@ void write_chunk(int dfs_server, FILE * fp, int chunk_size){
     int n;
     int total_received = 0;
     //printf("Chunk size: %d\n", chunk_size);
-    char chunk[chunk_size];
+    char * chunk = malloc(chunk_size);
     bzero(chunk, chunk_size);
     //printf("dfs server: %d\n", dfs_server);
     n = send(socket_array[dfs_server-1], "Ready", strlen("Ready"), 0);
@@ -208,6 +209,8 @@ void write_chunk(int dfs_server, FILE * fp, int chunk_size){
         total_received +=n;
         n = fwrite(chunk, 1, n, fp);
     }
+
+    free(chunk);
 
     //printf("Total received: %d\n", total_received);
     
@@ -419,27 +422,32 @@ int main(int argc, char **argv)
 
             /* Now split up the file and send to live_servers[] based on x hash value*/
             /* Assuming just 4 parts for testing*/
-            char p1[fsize/4];
-            char p2[fsize/4];
-            char p3[fsize/4];
-            char p4[fsize - 3*(fsize/4)]; //remainder if not divisible by 4
+            int chunk_s = fsize/4;
+            
+            int p4_size = fsize - 3*(fsize/4); //remainder if not divisible by 4
 
-            fread(p1, sizeof(p1), 1, f);
-            fread(p2, sizeof(p2), 1, f);
-            fread(p3, sizeof(p3), 1, f);
-            fread(p4, sizeof(p4), 1, f);
+            char * p1 = malloc(chunk_s);
+            char * p2 = malloc(chunk_s);
+            char * p3 = malloc(chunk_s);
+            char * p4 = malloc(p4_size);
+
+            fread(p1, chunk_s, 1, f);
+            fread(p2, chunk_s, 1, f);
+            fread(p3, chunk_s, 1, f);
+            fread(p4, p4_size, 1, f);
+
             fclose(f);
 
             if(x==0){
                 if(live_servers[DFS1-1]==1){
-                    send_chunk(p1, filename, '1', DFS1, sizeof(p1), time_in_mill );
+                    send_chunk(p1, filename, '1', DFS1, chunk_s, time_in_mill );
                     n = recv(socket_array[DFS1-1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
                         exit(0);
 
                     }
-                    send_chunk(p2, filename,'2',  DFS1, sizeof(p2), time_in_mill );
+                    send_chunk(p2, filename,'2',  DFS1, chunk_s, time_in_mill );
                     n = recv(socket_array[DFS1-1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
@@ -449,14 +457,14 @@ int main(int argc, char **argv)
                 }
 
                 if(live_servers[DFS2-1]){
-                    send_chunk(p2, filename,'2',  DFS2, sizeof(p2), time_in_mill);
+                    send_chunk(p2, filename,'2',  DFS2, chunk_s, time_in_mill);
                     n = recv(socket_array[DFS2 - 1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
                         exit(0);
 
                     }
-                    send_chunk(p3, filename, '3', DFS2, sizeof(p3), time_in_mill );
+                    send_chunk(p3, filename, '3', DFS2, chunk_s, time_in_mill );
                     n = recv(socket_array[DFS2 - 1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
@@ -466,14 +474,14 @@ int main(int argc, char **argv)
                 }
 
                 if(live_servers[DFS3-1]==1){
-                    send_chunk(p3, filename, '3', DFS3, sizeof(p3) , time_in_mill);
+                    send_chunk(p3, filename, '3', DFS3, chunk_s , time_in_mill);
                     n = recv(socket_array[DFS3 - 1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
                         exit(0);
 
                     }
-                    send_chunk(p4, filename, '4', DFS3, sizeof(p4), time_in_mill );
+                    send_chunk(p4, filename, '4', DFS3, p4_size, time_in_mill );
                     n = recv(socket_array[DFS3 - 1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
@@ -484,14 +492,14 @@ int main(int argc, char **argv)
                 
 
                 if(live_servers[DFS4-1]==1){
-                    send_chunk(p4, filename, '4', DFS4, sizeof(p4), time_in_mill );
+                    send_chunk(p4, filename, '4', DFS4, p4_size, time_in_mill );
                     n = recv(socket_array[DFS4 - 1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
                         exit(0);
 
                     }
-                    send_chunk(p1, filename, '1', DFS4, sizeof(p1), time_in_mill );
+                    send_chunk(p1, filename, '1', DFS4, chunk_s, time_in_mill );
                     n = recv(socket_array[DFS4 - 1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
@@ -502,14 +510,14 @@ int main(int argc, char **argv)
 
             }else if(x==1){
                 if(live_servers[DFS1-1]==1){
-                    send_chunk(p4, filename, '4', DFS1, sizeof(p4), time_in_mill );
+                    send_chunk(p4, filename, '4', DFS1, p4_size, time_in_mill );
                     n = recv(socket_array[DFS1-1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
                         exit(0);
 
                     }
-                    send_chunk(p1, filename, '1', DFS1, sizeof(p1), time_in_mill );
+                    send_chunk(p1, filename, '1', DFS1, chunk_s, time_in_mill );
                     n = recv(socket_array[DFS1-1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
@@ -519,13 +527,13 @@ int main(int argc, char **argv)
                 }
                 
                 if(live_servers[DFS2-1]==1){
-                    send_chunk(p1, filename, '1', DFS2, sizeof(p1), time_in_mill );
+                    send_chunk(p1, filename, '1', DFS2, chunk_s, time_in_mill );
                     n = recv(socket_array[DFS2-1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
                         exit(0);
                     }
-                    send_chunk(p2, filename, '2', DFS2, sizeof(p2), time_in_mill );
+                    send_chunk(p2, filename, '2', DFS2, chunk_s, time_in_mill );
                     n = recv(socket_array[DFS2-1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
@@ -535,14 +543,14 @@ int main(int argc, char **argv)
                 
 
                 if(live_servers[DFS3-1]==1){
-                    send_chunk(p2, filename, '2', DFS3, sizeof(p2), time_in_mill );
+                    send_chunk(p2, filename, '2', DFS3, chunk_s, time_in_mill );
                     n = recv(socket_array[DFS3-1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
                         exit(0);
 
                     }
-                    send_chunk(p3, filename, '3', DFS3, sizeof(p3), time_in_mill );
+                    send_chunk(p3, filename, '3', DFS3, chunk_s, time_in_mill );
                     n = recv(socket_array[DFS3-1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
@@ -552,14 +560,14 @@ int main(int argc, char **argv)
                 
 
                 if(live_servers[DFS4-1] ==1){
-                    send_chunk(p3, filename, '3', DFS4, sizeof(p3), time_in_mill );
+                    send_chunk(p3, filename, '3', DFS4, chunk_s, time_in_mill );
                     n = recv(socket_array[DFS4-1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
                         exit(0);
 
                     }
-                    send_chunk(p4, filename, '4', DFS4, sizeof(p4), time_in_mill );
+                    send_chunk(p4, filename, '4', DFS4, p4_size, time_in_mill );
                     n = recv(socket_array[DFS4-1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
@@ -570,14 +578,14 @@ int main(int argc, char **argv)
                 
             }else if(x==2){
                 if(live_servers[DFS1-1]==1){
-                    send_chunk(p3, filename,'3',  DFS1, sizeof(p3) , time_in_mill);
+                    send_chunk(p3, filename,'3',  DFS1, chunk_s , time_in_mill);
                     n = recv(socket_array[DFS1-1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
                         exit(0);
 
                     }
-                    send_chunk(p4, filename, '4', DFS1, sizeof(p4), time_in_mill );
+                    send_chunk(p4, filename, '4', DFS1, p4_size, time_in_mill );
                     n = recv(socket_array[DFS1-1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
@@ -588,14 +596,14 @@ int main(int argc, char **argv)
                 
 
                 if(live_servers[DFS2-1]==1){
-                    send_chunk(p4, filename,'4',  DFS2, sizeof(p4) , time_in_mill);
+                    send_chunk(p4, filename,'4',  DFS2, p4_size , time_in_mill);
                     n =recv(socket_array[DFS2-1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
                         exit(0);
 
                     }
-                    send_chunk(p1, filename,'1', DFS2, sizeof(p1), time_in_mill );
+                    send_chunk(p1, filename,'1', DFS2, chunk_s, time_in_mill );
                     n = recv(socket_array[DFS2-1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
@@ -606,14 +614,14 @@ int main(int argc, char **argv)
                
 
                 if(live_servers[DFS3-1]==1){
-                    send_chunk(p1, filename, '1',DFS3, sizeof(p1), time_in_mill );
+                    send_chunk(p1, filename, '1',DFS3, chunk_s, time_in_mill );
                     n = recv(socket_array[DFS3-1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
                         exit(0);
 
                     }
-                    send_chunk(p2, filename,'2', DFS3, sizeof(p2), time_in_mill );
+                    send_chunk(p2, filename,'2', DFS3, chunk_s, time_in_mill );
                     n = recv(socket_array[DFS3-1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
@@ -623,14 +631,14 @@ int main(int argc, char **argv)
                 }
                 
                 if(live_servers[DFS4-1]==1){
-                    send_chunk(p2, filename,'2', DFS4, sizeof(p2), time_in_mill );
+                    send_chunk(p2, filename,'2', DFS4, chunk_s, time_in_mill );
                     n = recv(socket_array[DFS4-1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
                         exit(0);
 
                     }
-                    send_chunk(p3, filename, '3',DFS4, sizeof(p3), time_in_mill );
+                    send_chunk(p3, filename, '3',DFS4, chunk_s, time_in_mill );
                     n = recv(socket_array[DFS4-1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
@@ -642,14 +650,14 @@ int main(int argc, char **argv)
                 
             }else if(x==3){
                 if(live_servers[DFS1-1]==1){
-                    send_chunk(p2, filename,'2', DFS1, sizeof(p2) , time_in_mill);
+                    send_chunk(p2, filename,'2', DFS1, chunk_s , time_in_mill);
                     n = recv(socket_array[DFS1-1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
                         exit(0);
 
                     }
-                    send_chunk(p3, filename,'3',DFS1, sizeof(p3), time_in_mill );
+                    send_chunk(p3, filename,'3',DFS1, chunk_s, time_in_mill );
                     n = recv(socket_array[DFS1-1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
@@ -659,14 +667,14 @@ int main(int argc, char **argv)
                 }
 
                 if(live_servers[DFS2-1]==1){
-                    send_chunk(p3, filename, '3',DFS2, sizeof(p3) , time_in_mill);
+                    send_chunk(p3, filename, '3',DFS2, chunk_s , time_in_mill);
                     n = recv(socket_array[DFS2-1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
                         exit(0);
 
                     }
-                    send_chunk(p4, filename,'4',DFS2, sizeof(p4), time_in_mill );
+                    send_chunk(p4, filename,'4',DFS2, p4_size, time_in_mill );
                     n = recv(socket_array[DFS2-1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
@@ -676,14 +684,14 @@ int main(int argc, char **argv)
                 }
 
                 if(live_servers[DFS3-1]==1){
-                    send_chunk(p4, filename,'4', DFS3, sizeof(p4), time_in_mill );
+                    send_chunk(p4, filename,'4', DFS3, p4_size, time_in_mill );
                     n = recv(socket_array[DFS3-1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
                         exit(0);
 
                     }
-                    send_chunk(p1, filename,'1', DFS3, sizeof(p1) , time_in_mill);
+                    send_chunk(p1, filename,'1', DFS3, chunk_s , time_in_mill);
                     n = recv(socket_array[DFS3-1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
@@ -694,14 +702,14 @@ int main(int argc, char **argv)
 
                 if(live_servers[DFS4-1]==1){
 
-                    send_chunk(p1, filename,'1', DFS4, sizeof(p1), time_in_mill );
+                    send_chunk(p1, filename,'1', DFS4, chunk_s, time_in_mill );
                     n = recv(socket_array[DFS4-1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
                         exit(0);
 
                     }
-                    send_chunk(p2, filename, '2',DFS4, sizeof(p2), time_in_mill );
+                    send_chunk(p2, filename, '2',DFS4, chunk_s, time_in_mill );
                     n = recv(socket_array[DFS4-1], buf, BUFSIZE, 0 ); //receive ack before sending next chunk
                     if(n<0){
                         printf("Server timeout\n");
@@ -709,7 +717,13 @@ int main(int argc, char **argv)
                     }
                 }
             }
+            free(p1);
+            free(p2);
+            free(p3);
+            free(p4);
         }
+
+        
 
         for(int i=0; i<num_servers; i++){
             if(live_servers[i]==1){

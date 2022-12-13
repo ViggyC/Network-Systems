@@ -66,7 +66,7 @@ void *service_request(void *socket_desc)
         int done = 0;
         /* Server can continually receive mul*/
         n = recv(sock, buf, BUFSIZE, 0);
-        //printf("Received %d bytes\n", n);
+        printf("Received %d bytes\n", n);
         //printf("Client Request:\n%s\n", buf);
         if(n<0){
             error("Error in recv: ");
@@ -100,7 +100,7 @@ void *service_request(void *socket_desc)
         if(strcmp(buf , "ls")!=0 && strcmp(buf , "list")!=0){
             strtok(temp_buf, " " );
             command = strtok(NULL, "\r\n");
-            //printf("cmd: %s\n", command);
+            printf("cmd: %s\n", command);
         }else{
             command = "ls";
             //printf("cmd: %s\n", command);
@@ -250,12 +250,13 @@ void *service_request(void *socket_desc)
                 //printf("bytes recieved: %d\n", bytes_receieved);
                 //printf("received: %s\n", recv_buf);
                 /* Read chunk into buffer*/
-                char chunk[fsize];
+                char * chunk = malloc(fsize);
                 bzero(chunk, fsize);
                 fread(chunk, fsize, 1, file);
                 fclose(file);
                 pthread_mutex_unlock(&file_lock);
                 bytes_sent = send(sock, chunk, fsize, 0);
+                free(chunk);
             }
 
         }else if(strcmp(command, "ls")==0){
