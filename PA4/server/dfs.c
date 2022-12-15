@@ -38,8 +38,10 @@ void error(char *msg)
 void *service_request(void *socket_desc)
 {
     //threads have their own stack
+    //sleep(2);
     pthread_detach(pthread_self());
     int sock = *(int *)socket_desc;
+    free(socket_desc);
     char buf[BUFSIZE];
     char temp_buf[BUFSIZE];
     bzero(temp_buf, sizeof(temp_buf));
