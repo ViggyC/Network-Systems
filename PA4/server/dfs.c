@@ -1,8 +1,8 @@
 /*
  * dfs.c DFS TCP server
- * usage: ./dfs ./dfs<n> <port> 
+ * usage: ./dfs ./dfs<n> <port>
  * Author: Vignesh Chandrasekhar
-*/
+ */
 
 #include <stdio.h>
 #include <unistd.h>
@@ -37,8 +37,8 @@ void error(char *msg)
 
 void *service_request(void *socket_desc)
 {
-    //threads have their own stack
-    //sleep(2);
+    // threads have their own stack
+    // sleep(2);
     pthread_detach(pthread_self());
     int sock = *(int *)socket_desc;
     free(socket_desc);
@@ -53,7 +53,8 @@ void *service_request(void *socket_desc)
     char *header_overflow;
     char *check;
     char *fname;
-    while(1){
+    while (1)
+    {
         memset(buf, 0, BUFSIZE);
         int n;
         int is_header = 0;
@@ -62,70 +63,81 @@ void *service_request(void *socket_desc)
         char *command;
         char *chunk;
         int chunk_size;
-        char * client; //for get for same filename different content
+        char *client; // for get for same filename different content
         int timestamp;
         char timestamp_buf[255];
         int done = 0;
         /* Server can continually receive mul*/
         n = recv(sock, buf, BUFSIZE, 0);
         printf("Received %d bytes\n", n);
-        //printf("Client Request:\n%s\n", buf);
-        if(n<0){
+        // printf("Client Request:\n%s\n", buf);
+        if (n < 0)
+        {
             error("Error in recv: ");
         }
 
-        if(n==0){
+        if (n == 0)
+        {
             break;
         }
 
         strncpy(temp_buf, buf, n);
         /* If client has PUT all files then it will send an ACK*/
-        if(strcmp(buf, "put done")==0 || strstr(buf, "put done")!=NULL){
+        if (strcmp(buf, "put done") == 0 || strstr(buf, "put done") != NULL)
+        {
             printf("Client PUT successful\n");
             close(sock);
             return NULL;
         }
 
         /* If client has PUT all files then it will send an ACK*/
-        if(strcmp(buf, "get done")==0 || strstr(buf, "get done")!=NULL){
+        if (strcmp(buf, "get done") == 0 || strstr(buf, "get done") != NULL)
+        {
             printf("Client GET successful\n");
             close(sock);
             return NULL;
         }
 
-        if(strcmp(buf, "ls done")==0 || strstr(buf, "ls done")!=NULL){
+        if (strcmp(buf, "ls done") == 0 || strstr(buf, "ls done") != NULL)
+        {
             printf("Client LS successful\n");
             close(sock);
             return NULL;
         }
 
-        if(strcmp(buf , "ls")!=0 && strcmp(buf , "list")!=0){
-            strtok(temp_buf, " " );
+        if (strcmp(buf, "ls") != 0 && strcmp(buf, "list") != 0)
+        {
+            strtok(temp_buf, " ");
             command = strtok(NULL, "\r\n");
             printf("cmd: %s\n", command);
-        }else{
-            command = "ls";
-            //printf("cmd: %s\n", command);
         }
-        
-        if(strcmp(buf, "list")!=0 && strcmp(buf, "ls")!=0){
+        else
+        {
+            command = "ls";
+            // printf("cmd: %s\n", command);
+        }
+
+        if (strcmp(buf, "list") != 0 && strcmp(buf, "ls") != 0)
+        {
             fname = strstr(temp_buf, "Filename: ");
             strtok(fname, " ");
             filename = strtok(NULL, "\r\n");
-            //printf("fname: %s\n", filename);
+            // printf("fname: %s\n", filename);
 
             char *c = strstr(temp_buf, "Chunk: ");
             strtok(c, " ");
             chunk = strtok(NULL, "\r\n");
-            //printf("chonk: %s\n", chunk);
+            // printf("chonk: %s\n", chunk);
         }
-        
-        if(strcmp(command, "put")==0 || strcmp(command, "PUT") ==0){
+
+        /* PUT has a timestamp included in the client header, unlike GET*/
+        if (strcmp(command, "put") == 0 || strcmp(command, "PUT") == 0)
+        {
             char *content_length = strstr(buf, "Size: ");
             char *length = strstr(content_length, " ");
             length = length + 1;
             chunk_size = atoi(length);
-            //printf("chunk size: %d\n", chunk_size);
+            // printf("chunk size: %d\n", chunk_size);
             char bruh[BUFSIZE];
             bzero(bruh, BUFSIZE);
             strcpy(bruh, buf);
@@ -133,21 +145,20 @@ void *service_request(void *socket_desc)
             char *time = strstr(ts, " ");
             time = time + 1;
             strtok(time, ".");
-            //printf("milliseconds: %s\n", time);
+            // printf("milliseconds: %s\n", time);
             strcpy(timestamp_buf, time);
-            //printf("timestamp buf: %s\n", timestamp_buf);
-
+            // printf("timestamp buf: %s\n", timestamp_buf);
         }
-        
+
         /* Parsing for partial writes!!!!!*/
         header_overflow = buf;
         check = strstr(buf, "\r\n\r\n");
         check = check + 4;
         header_length = check - header_overflow;
-        //printf("Header length: %d\n", header_length);
-        
+        // printf("Header length: %d\n", header_length);
 
-        if(strcmp(command, "put")==0){
+        if (strcmp(command, "put") == 0)
+        {
             char relative_path[BUFSIZE]; // ./dfs#/filename.partition
             /* We will need to recv again to recieve the chunk*/
             strcpy(relative_path, dir);
@@ -160,16 +171,16 @@ void *service_request(void *socket_desc)
             printf("Relative path: %s\n", relative_path);
 
             pthread_mutex_lock(&file_lock);
-            FILE * fp = fopen(relative_path, "wb");
+            FILE *fp = fopen(relative_path, "wb");
             int bytes_written;
-            //printf("n: %d, header length: %d, chunk size: %d\n", n, header_length, chunk_size);
+            // printf("n: %d, header length: %d, chunk size: %d\n", n, header_length, chunk_size);
             /*Write what we have*/
-            payload_bytes_recevied = n - header_length; 
+            payload_bytes_recevied = n - header_length;
             bytes_written = fwrite(check, 1, payload_bytes_recevied, fp);
-            //printf("Partial payload: wrote %d bytes\n", bytes_written);
+            // printf("Partial payload: wrote %d bytes\n", bytes_written);
             /* We need to keep reading*/
             left_to_read = chunk_size - payload_bytes_recevied;
-            //printf("left to read %d bytes more bytes\n", left_to_read);
+            // printf("left to read %d bytes more bytes\n", left_to_read);
             int total_read = 0;
             while (total_read < left_to_read)
             {
@@ -185,17 +196,17 @@ void *service_request(void *socket_desc)
                     printf("---\n---\n---\n---\n---\n");
                 total_read += n;
             }
-            //printf("total written to file: %d\n", total_read + payload_bytes_recevied);
+            // printf("total written to file: %d\n", total_read + payload_bytes_recevied);
             fclose(fp);
             pthread_mutex_unlock(&file_lock);
-
 
             /* Send an acknowledement before client can send next chunk so we dont cram the buffer*/
             int send_bytes;
             send_bytes = send(sock, "PUT successful", sizeof("PUT successful"), 0);
-            //printf("Bytes sent: %d\n", send_bytes);
-
-        }else if(strcmp(command, "get")==0){
+            // printf("Bytes sent: %d\n", send_bytes);
+        }
+        else if (strcmp(command, "get") == 0)
+        {
             char file_chunk[BUFSIZE]; // ./dfs#/filename.partition
             bzero(file_chunk, BUFSIZE);
             size_t fsize;
@@ -208,7 +219,7 @@ void *service_request(void *socket_desc)
             /* This is for the case where two clients put the same filename but different content*/
             strcat(file_chunk, filename);
             strcat(file_chunk, "-");
-            strcat(file_chunk, chunk);   
+            strcat(file_chunk, chunk);
 
             /* Setting up Linux command for getting most recent filename-chunk#*/
             char file_bullshit[BUFSIZE];
@@ -220,18 +231,21 @@ void *service_request(void *socket_desc)
             strcat(file_bullshit, " | sort -r");
 
             /* popen() returns a pipe with the data we requested: last writer filename-chunk#*/
-            FILE * fp  = popen(file_bullshit,"r");
+            FILE *fp = popen(file_bullshit, "r");
             char buf[BUFSIZE];
             bzero(buf, BUFSIZE);
             fscanf(fp, "%[^\n]", buf);
             printf("File: %s\n", buf);
-         
-            if(strstr(buf, file_chunk)==NULL){
-                //printf("%s does not exist.....ping a different server\n", relative_path);
+
+            if (strstr(buf, file_chunk) == NULL)
+            {
+                // printf("%s does not exist.....ping a different server\n", relative_path);
                 /* client will see that the chunk was not found so it will hit up a different dfs server*/
                 bytes_sent = send(sock, "Not Found", sizeof("Not Found"), 0);
                 /*Server will go back up to while loop to get next chunk request*/
-            }else{
+            }
+            else
+            {
                 printf("%s exists\n", file_chunk);
                 char relative_path[BUFSIZE];
                 bzero(relative_path, BUFSIZE);
@@ -240,7 +254,7 @@ void *service_request(void *socket_desc)
                 strcat(relative_path, buf);
                 printf("Relative path: %s\n", relative_path);
                 pthread_mutex_lock(&file_lock);
-                FILE * file = fopen(relative_path, "rb");
+                FILE *file = fopen(relative_path, "rb");
                 fseek(file, 0, SEEK_END);
                 fsize = ftell(file);
                 fseek(file, 0, SEEK_SET);
@@ -249,10 +263,10 @@ void *service_request(void *socket_desc)
                 bytes_sent = send(sock, size_buf, sizeof(size_buf), 0);
                 /* If dfs has the chunk, we can receive another request from the client for the actual chunk*/
                 bytes_receieved = recv(sock, recv_buf, sizeof(recv_buf), 0); //"ready"
-                //printf("bytes recieved: %d\n", bytes_receieved);
-                //printf("received: %s\n", recv_buf);
+                // printf("bytes recieved: %d\n", bytes_receieved);
+                // printf("received: %s\n", recv_buf);
                 /* Read chunk into buffer*/
-                char * chunk = malloc(fsize);
+                char *chunk = malloc(fsize);
                 bzero(chunk, fsize);
                 fread(chunk, fsize, 1, file);
                 fclose(file);
@@ -260,9 +274,10 @@ void *service_request(void *socket_desc)
                 bytes_sent = send(sock, chunk, fsize, 0);
                 free(chunk);
             }
-
-        }else if(strcmp(command, "ls")==0){
-            //printf("Client wants to list\n");
+        }
+        else if (strcmp(command, "ls") == 0)
+        {
+            // printf("Client wants to list\n");
             DIR *directory;
             struct dirent *entry;
             char full_ls[BUFSIZE];
@@ -279,13 +294,13 @@ void *service_request(void *socket_desc)
                 // printf("%s\n", entry->d_name);
                 /* Source for concatenating strings */
                 // https://stackoverflow.com/questions/2218290/concatenate-char-array-in-c
-                if(strcmp(entry->d_name, ".")!=0 && strcmp(entry->d_name, "..")!=0){
+                if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0)
+                {
                     strcat(full_ls, entry->d_name);
                     strcat(full_ls, "\n");
                 }
-                
             }
-            //printf("length of dir: %lu\n", strlen(full_ls));
+            // printf("length of dir: %lu\n", strlen(full_ls));
             full_ls[strlen(full_ls)] = '\0';
             printf("%s\n", full_ls);
             n = send(sock, full_ls, strlen(full_ls), 0);
@@ -293,7 +308,6 @@ void *service_request(void *socket_desc)
     }
 
     return NULL;
-
 }
 
 int main(int argc, char **argv)
@@ -314,14 +328,14 @@ int main(int argc, char **argv)
     char *file_requested;
     int server_num;
     char server_dir[5];
-    int client_socket;             /* each process will have its own*/
+    int client_socket; /* each process will have its own*/
     int *new_sock;
 
-    if(pthread_mutex_init(&file_lock, NULL) != 0){
-      printf("Cannot init mutex\n");
-      return 1;
+    if (pthread_mutex_init(&file_lock, NULL) != 0)
+    {
+        printf("Cannot init mutex\n");
+        return 1;
     }
-    
 
     if (argc != 3)
     {
@@ -333,7 +347,6 @@ int main(int argc, char **argv)
     strcpy(dir, argv[1]);
     /* Create local directory for dfs server based on argv[1]*/
     mkdir(dir, 0777);
-
 
     /*
      * socket: create the parent socket
@@ -382,7 +395,7 @@ int main(int argc, char **argv)
     while ((client_socket = accept(sockfd, (struct sockaddr *)&clientaddr, &clientlen)) > 0)
     {
 
-        //printf("Got a connection\n");
+        // printf("Got a connection\n");
         /* Write logic for multiple connections - fork() or threads */
         /*TODO: graceful exit*/
         /* Parent spawns child processes to handle incoming requests*/
