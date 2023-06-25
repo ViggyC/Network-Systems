@@ -913,6 +913,7 @@ int received_request(int sock)
     }
 
     /* KEEP ALIVE BABY*/
+    /* Reuse same child socket*/
     while ((n = recv(sock, buf, BUFSIZE, 0)) > 0)
     {
         /* reset timeout value*/
@@ -944,7 +945,7 @@ int received_request(int sock)
     if the server closes the socket on behalf of the client,
     then this will never send because the client already exited*/
     send(sock, timeout, sizeof(timeout), 0);
-    // printf("%s\n", timeout);
+    printf("%s\n", timeout);
     close(sock);
     // printf("Done!!!\n");
     //  return from entry point routine
@@ -1007,7 +1008,7 @@ int main(int argc, char **argv)
     portno = atoi(argv[1]);
     timeout = atoi(argv[2]);
 
-    /*listening socket*/
+    /*listening socket - parent which then creates new client sockets using fork()*/
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
 
     /* setsockopt: Handy debugging trick that lets
@@ -1099,9 +1100,9 @@ int main(int argc, char **argv)
                 exit(0);
             }
         }
-        /* Parent needs to close client socket*/
+        /* Parent needs to close client socket (parents memory space, child has its own)*/
         close(client_socket);
-        /*Parent goes back up to the loop to handle more clients, child may be running multiple requests*/
+        /*Parent goes back up to the loop to handle more clients, child may be running multiple requests - keep alive*/
     }
     /*Accept returns -1 when signal handler closes the socket, so we sleep and let the children finish*/
     printf("Gracefully exiting...\n");
