@@ -481,6 +481,10 @@ int main(int argc, char **argv)
     signal(SIGINT, sigint_handler);
     check = 1;
 
+    char timeout[BUFSIZE];
+    bzero(timeout, sizeof(timeout));
+    sprintf(timeout, "HTTP/1.1 408 Request Timeout\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+
     if (argc != 2)
     {
         fprintf(stderr, "usage: %s <port>\n", argv[0]);
@@ -595,6 +599,7 @@ int main(int argc, char **argv)
                 /* After parsing need to send response, this is handled in parse_request() as well*/
                 /* meanwhile parent is creating more forks() for incoming requests*/
             }
+            printf("OOOOOO TOOOK TOO LONG\n");
 
             /* If SIGINT is hit but we didnt timeout we should just close and exit*/
             if (check == 0)
@@ -604,10 +609,6 @@ int main(int argc, char **argv)
             }
 
             /*10 seconds have passed so we timeout*/
-            char timeout[BUFSIZE];
-            bzero(timeout, sizeof(timeout));
-            // printf("client that closed: %d\n", client_socket);
-            sprintf(timeout, "HTTP/1.1 408 Request Timeout\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
             /* This will only send in the case of a timout,
             if the server closes the socket on behalf of the client,
             then this will never send because the client already exited*/
