@@ -7,12 +7,12 @@
 
 int main()
 {
-    char server_message[256] = "This is the server\n";
+    char server_message[256] = "This is the server eqibfp   wg  pg\n";
     int network_socket = socket(AF_INET, SOCK_STREAM, 0);
 
     struct sockaddr_in server_address;
     server_address.sin_family = AF_INET;
-    server_address.sin_port = htons(5000);
+    server_address.sin_port = htons(8888);
     server_address.sin_addr.s_addr = INADDR_ANY; // resolved to any IP address on machine
 
     // bind socket to specifed IP and port, using same port

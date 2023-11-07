@@ -422,6 +422,7 @@ int main(int argc, char **argv)
         }
         else if (strcmp(command, "ls") == 0)
         {
+            printf("Listing files for client\n");
             bzero(buf, sizeof(buf));
             FILE *fp;
             char path[BUFSIZE];

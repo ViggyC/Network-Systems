@@ -74,33 +74,6 @@ int get_num_servers()
 }
 
 /* Source: https://stackoverflow.com/questions/10324611/how-to-calculate-the-md5-hash-of-a-large-file-in-c */
-// int md5_hash(char * filename){
-//     unsigned char c[MD5_DIGEST_LENGTH];
-//     int i;
-//     FILE *inFile = fopen (filename, "rb");
-//     MD5_CTX mdContext;
-//     int bytes;
-//     unsigned char data[1024];
-//     int x = 0;
-
-//     if (inFile == NULL) {
-//         printf ("%s can't be opened.\n", filename);
-//         return 0;
-//     }
-
-//     MD5_Init (&mdContext);
-//     while ((bytes = fread (data, 1, 1024, inFile)) != 0)
-//         MD5_Update (&mdContext, data, bytes);
-//     MD5_Final (c,&mdContext);
-//     for(int i = 0; i < MD5_DIGEST_LENGTH; i++) {
-//         int md5Char = (int)c[i];
-//         x  = x*16 + md5Char;
-//     }
-//     fclose (inFile);
-//     //printf("hash: %c\n", x);
-//     return abs(x%y);
-// }
-
 /* Hash just a string*/
 int md5_hash(char *filename)
 {
@@ -245,21 +218,6 @@ int chunk_query(char *filename, char chunk_num, int dfs_server)
         return 0;
     }
     return atoi(buf);
-}
-
-int check_array(char *file, char file_arr[MAX_FILES][MAX_FILE_LENGTH], int len)
-{
-    // printf("length of array: %d\n", len);
-    for (int i = 0; i < len; i++)
-    {
-        // printf("bruh: %s\n",file_arr[i]);
-        if (file_arr[i] != NULL && strcmp(file, file_arr[i]) == 0)
-        {
-            // printf("%s already exists\n", file);
-            return 0;
-        }
-    }
-    return 1;
 }
 
 int main(int argc, char **argv)

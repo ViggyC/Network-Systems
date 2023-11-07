@@ -141,6 +141,7 @@ int main(int argc, char **argv)
         }
 
         /* send the parsed user input to the server */
+        printf("Sending: %s\n", buf);
         n = sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr *)&serveraddr, serverlen); // returns number of bytes sent
         if (n < 0)
             error("ERROR in sendto");
