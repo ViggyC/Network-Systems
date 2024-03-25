@@ -29,3 +29,12 @@ Handles simultaneous client connections and servers web pages from remote server
 Distributed File System
 
 Client Server TCP program that distributed file chunks across DFS servers, and then reassembles them upon invokation
+
+client: make && ./dfc get|put /client/files
+
+server: 
+make && ./dfs ./dfs1 8001 
+./dfs ./dfs2 8002
+./dfs ./dfs3 8003
+./dfs ./dfs4 8004
+
